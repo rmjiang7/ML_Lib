@@ -94,3 +94,6 @@ ENV/
 
 # Pickled files
 *.p
+
+#Plot files
+temp-plot.html

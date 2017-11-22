@@ -35,18 +35,36 @@ class LinearRegression(GLM):
         self.log_prob = log_prob
         self.grad_log_prob = autograd.grad(log_prob)
 
+class LogisticRegression(GLM):
+
+    def inv_logit(self, Z):
+        return 1/(1 + agnp.exp(-Z))
+
+    def predict(self, params, X, cutoff = 0.5):
+        return (np.expand_dims(self.inv_logit(self.evaluate_linear(params, X)),2) > cutoff).astype(int)
+
+    def set_data(self, X, y):
+        def log_prob(params):
+            prob_hat = self.inv_logit(self.evaluate_linear(params, X))
+            prob_hat_neg = 1 - prob_hat
+            ll = agnp.einsum('km,m->k', agnp.log(prob_hat), y) + agnp.einsum('km,m->k', agnp.log(prob_hat_neg), 1-y)
+            return ll.reshape(-1,1)
+        
+        self.log_prob = log_prob
+        self.grad_log_prob = autograd.grad(log_prob)
+
 if __name__ == '__main__':
 
     import plotly.offline as pyo
     import plotly.graph_objs as go
     from ML_Lib.inference.map import MAP
+    from ML_Lib.utils.datasets import BreastCancer
 
-    g = LinearRegression(2)
-    X = np.vstack((np.ones(100), np.linspace(-5,5,100))).T
-    y = np.dot(X,np.array([5,2]))
+    bc = BreastCancer()
+    X = bc.normalized_X
+    X = np.hstack((np.ones(X.shape[0]).reshape(-1,1),X))
+    y = bc.y
+    g.fit(X,y)
 
-    g.set_data(X, y)
-    print(g.get_params())
-    m = MAP(g)
-    m.train()
-    print(g.get_params())
+    g2 = LogisticRegression(bc.n_features + 1)
+    g2.set_data(X,y)

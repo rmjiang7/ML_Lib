@@ -44,7 +44,7 @@ class MetropolisHastings(object):
                 chain.append(curr)
         print("Accept %%: %f %%" % (n_accepts/num_samples))
         print("Accept sampling %%: %f %%" % (n_accepts_samples/(num_samples - num_warmup)))
-        return chain
+        return np.vstack(chain)
 
 class HMC(object):
 
@@ -102,7 +102,7 @@ class HMC(object):
                 chain.append(curr)
         print("Accept %%: %f %%" % (n_accepts/num_samples))
         print("Accept sampling %%: %f %%" % (n_accepts_samples/(num_samples - num_warmup)))
-        return chain
+        return np.vstack(chain)
 
 if __name__ == "__main__":
     from ML_Lib.models.glm import LinearRegression
@@ -117,7 +117,6 @@ if __name__ == "__main__":
     g.set_data(X, y)
     m = HMC(g)
     samples = m.train(num_samples = 100, step_size = 0.01, integration_steps = 20)
-    
     """
     data = []
     for i in range(len(samples)):

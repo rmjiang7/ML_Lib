@@ -7,7 +7,7 @@ from ML_Lib.models.model import Model
 
 class NeuralNetwork(Model):
     
-    def __init__(self, layer_dims, nonlinearity):
+    def __init__(self, layer_dims, nonlinearity = lambda x: (x > 0)*x):
         self.nonlinearity = nonlinearity
         
         self.shapes = list(zip(layer_dims[:-1], layer_dims[1:]))
