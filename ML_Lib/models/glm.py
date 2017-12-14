@@ -34,6 +34,16 @@ class LinearRegression(GLM):
         
         self.log_prob = log_prob
         self.grad_log_prob = autograd.grad(log_prob)
+    
+    def get_conjugate_posterior(self, X, y):
+        mu_0 = np.zeros(self.n_dims)
+        S_0 = np.eye(self.n_dims)
+        S_0_inv = np.linalg.inv(S_0)
+        S_n_inv = S_0_inv + X.T.dot(X)
+        S_n = np.linalg.inv(S_n_inv)
+        m_n = S_n.dot(S_0_inv.dot(mu_0) + X.T.dot(y)[:,0])
+        #print(np.linalg.solve(X.T.dot(X),X.T.dot(y)))
+        return m_n, S_n
 
 class LogisticRegression(GLM):
 
@@ -59,7 +69,8 @@ if __name__ == '__main__':
     import plotly.graph_objs as go
     from ML_Lib.inference.map import MAP
     from ML_Lib.utils.datasets import BreastCancer
-
+    
+    """
     bc = BreastCancer()
     X = bc.normalized_X
     X = np.hstack((np.ones(X.shape[0]).reshape(-1,1),X))
@@ -68,3 +79,11 @@ if __name__ == '__main__':
 
     g2 = LogisticRegression(bc.n_features + 1)
     g2.set_data(X,y)
+    """
+    X = np.random.uniform(-2,2,size = (100,1))
+    y = 5*X + 2 + np.random.normal(0,1,size=(100,1))
+    X = np.hstack((np.ones(X.shape[0]).reshape(-1,1),X))
+    g = LinearRegression(X.shape[1])
+    g.set_data(X, y)
+    m_n, S_n = g.get_conjugate_posterior(X, y)
+    print(m_n)

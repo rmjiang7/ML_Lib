@@ -29,7 +29,9 @@ class BostonHousing(Dataset):
         self.n_observations = data.shape[0]
         self.n_features = data.shape[1] - 1
         self.X = data[:,:self.n_features]
+        self.normalized_X = (self.X - self.X.mean(axis = 0))/(self.X.std(axis = 0))
         self.y = data[:,self.n_features]
+        self.normalized_y = (self.y - self.y.mean(axis = 0))/(self.y.std(axis = 0))
 
 class BreastCancer(Dataset):
 
@@ -52,14 +54,11 @@ if __name__ == "__main__":
     b = BostonHousing()
 
     l = NeuralNetwork([b.n_features, 10, 1])
-    l.set_data(b.X, b.y)
+    l.set_data(b.normalized_X, b.normalized_y)
     
     m = HMC(l)
-    samples = m.train(10, step_size = 0.0001, integration_steps = 50)
-    predictions = l.predict(samples, b.X)
-    print(predictions.shape)
-    """
-    print(np.mean((np.mean(predictions, axis = 0) - b.y)**2))
-    """
+    samples = m.train(1000, step_size = 0.0001, integration_steps = 50)
+    predictions = l.predict(samples, b.normalized_X)
+    print(np.mean((np.mean(predictions, axis = 0) - b.normalized_y)**2))
 
     

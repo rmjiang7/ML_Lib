@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.stats import norm
-from autograd.optimizers import adam
+from autograd.misc.optimizers import adam
 import autograd.numpy as agnp
 import autograd
 

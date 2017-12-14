@@ -1,5 +1,5 @@
 import numpy as np
-from autograd.optimizers import adam
+from autograd.misc.optimizers import adam
 
 class MAP(object):
 
@@ -8,7 +8,7 @@ class MAP(object):
         self.lp = model.log_prob
         self.grad = model.grad_log_prob
 
-    def train(self, step_size = 0.01, num_iters = 1000, callback = None):
+    def train(self, step_size = 0.01, num_iters = 1000, verbose = False, callback = None):
         init = self.model.params
         final_params = adam(lambda x, _: -self.grad(x), init, step_size = step_size, num_iters = num_iters, callback = callback)
         self.model.set_params(final_params)

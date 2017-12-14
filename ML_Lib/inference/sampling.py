@@ -1,5 +1,4 @@
 import numpy as np
-from autograd.optimizers import adam
 from autograd.scipy.stats import multivariate_normal
 
 class MetropolisHastings(object):

@@ -5,6 +5,26 @@ from autograd.scipy.misc import logsumexp
 from autograd.scipy.stats import norm
 from ML_Lib.models.model import Model
 
+class FCLayer(Model):
+
+    def __init__(self, input_dim, output_dim, nonlinearity):
+        self.nonlinearity = nonlinearity
+        self.num_weights = input_dim*(output_dim + 1)
+        self.m = input_dim
+        self.n = output_dim
+        
+        # Xavier Initialization
+        cur_idx = 0
+        self.params = np.random.normal(0, np.sqrt(2/(self.m + self.n)), size = (1,self.num_weights))
+        
+        def unpack_params(weights):
+            num_weight_sets = len(weights)
+            return self.params[:, :self.m*self.n].reshape((num_weight_sets, self.m, self.n)),\
+                   self.params[:, self.m*self.n:].reshape((num_weight_sets, 1, self.n))
+
+    def forward(self, weights, inputs):
+        return agnp.einsum('mnd,mdo->mno', inputs, W)
+
 class NeuralNetwork(Model):
     
     def __init__(self, layer_dims, nonlinearity = lambda x: (x > 0)*x):
@@ -12,8 +32,14 @@ class NeuralNetwork(Model):
         
         self.shapes = list(zip(layer_dims[:-1], layer_dims[1:]))
         self.num_weights = sum((m+1)*n for m, n in self.shapes)
-        self.params = np.random.normal(0, 1, size = (1,self.num_weights))
-        
+        self.params = np.zeros((1,self.num_weights))
+
+        # Xavier Initialization
+        cur_idx = 0
+        for m, n in self.shapes:
+            self.params[0,cur_idx:cur_idx + (m+1)*n] = np.random.normal(0,np.sqrt(2/(m + n)), size = (1,(m+1)*n))
+            cur_idx += (m+1)*n
+       
         def unpack_layers(weights):
             num_weight_sets = len(weights)
             for m, n in self.shapes:
