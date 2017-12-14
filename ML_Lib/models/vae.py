@@ -2,15 +2,14 @@ import numpy as np
 import autograd as ag
 import autograd.numpy as agnp
 from ML_Lib.models.model import Model
-from ML_Lib.models.neural_network import NeuralNetwork
-import matplotlib.pyplot as plt
+from ML_Lib.models.neural_network import DenseNeuralNetwork
 
 class VariationalAutoencoderShared(Model):
 
     def __init__(self, encoder_dims, decoder_dims, nonlinearity = lambda x: (x > 0)*x):
         self.nonlinearity = nonlinearity
-        self.encoder = NeuralNetwork(encoder_dims, nonlinearity)
-        self.decoder = NeuralNetwork(decoder_dims, nonlinearity)
+        self.encoder = DenseNeuralNetwork(encoder_dims, nonlinearity)
+        self.decoder = DenseNeuralNetwork(decoder_dims, nonlinearity)
         self.latent_dim = decoder_dims[0]
         self.params = np.hstack([self.encoder.get_params(),self.decoder.get_params()])
         
@@ -58,9 +57,9 @@ class VariationalAutoencoder(Model):
 
     def __init__(self, encoder_dims, decoder_dims, nonlinearity = lambda x: (x > 0)*x):
         self.nonlinearity = nonlinearity
-        self.encoder_mu = NeuralNetwork(encoder_dims, nonlinearity)
-        self.encoder_sig = NeuralNetwork(encoder_dims, nonlinearity) 
-        self.decoder = NeuralNetwork(decoder_dims, nonlinearity)
+        self.encoder_mu = DenseNeuralNetwork(encoder_dims, nonlinearity)
+        self.encoder_sig = DenseNeuralNetwork(encoder_dims, nonlinearity) 
+        self.decoder = DenseNeuralNetwork(decoder_dims, nonlinearity)
         self.latent_dim = decoder_dims[0]
         self.params = np.hstack([self.encoder_mu.get_params(), self.encoder_sig.get_params(),self.decoder.get_params()])
         
@@ -112,6 +111,7 @@ if __name__ == "__main__":
     from tensorflow.examples.tutorials.mnist import input_data
     import scipy.misc
     import sys
+    import matplotlib.pyplot as plt
 
     mnist = input_data.read_data_sets("/Users/richardjiang/GradMLearning/datasets/MNIST_data/", one_hot=True)
     #vae = VariationalAutoencoder([784,200,200,20],[20,200,200,784])

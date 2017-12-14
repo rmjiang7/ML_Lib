@@ -1,51 +1,85 @@
 import numpy as np
 from autograd.scipy.stats import multivariate_normal
+from pathos.multiprocessing import ProcessingPool
+import pathos.multiprocessing as multiprocessing
 
-class MetropolisHastings(object):
+class MCMCSampler(object):
 
     def __init__(self, model):
         self.model = model
         self.lp = model.log_prob
 
-    def train(self, num_samples, proposal = None, proposal_ll = None, num_warmup = None, init = None):
+    def multichain_sampling(self, draw_samples, num_cores = None, num_chains = 1):
+        if num_cores is None:
+            num_cores = max(multiprocessing.cpu_count(), num_chains)
         
-        n_params = self.model.get_params().shape[1]
-        if init is None:
-            init = self.model.get_params()
-        if num_warmup is None:
-            num_warmup = num_samples/2
-        if proposal is None:
-            proposal = lambda theta: np.random.multivariate_normal(theta[0,:], np.eye(n_params)).reshape(1,-1)
-            proposal_ll = lambda x, theta: np.sum(multivariate_normal.logpdf(x[0,:], theta[0,:], np.eye(n_params)))
+        def worker(worker_id):
+            return draw_samples()
 
-        curr = init
-        curr_ll = self.model.log_prob(curr)
-        chain = []
-        n_accepts = 0
-        n_accepts_samples = 0
+        with ProcessingPool(num_cores) as p:
+            res = p.map(worker,[i for i in range(num_chains)])
         
-        for i in range(num_samples):
-            # Draw a new sample from the proposal
-            new_sample = proposal(curr)
-            new_sample_ll = self.model.log_prob(new_sample)
-            
-            # Metropolis correction
-            new_proposal_ll = new_sample_ll + proposal_ll(curr, new_sample)
-            curr_proposal_ll = curr_ll + proposal_ll(new_sample, curr)
-           
-            if np.log(np.random.rand()) < np.minimum(0., new_proposal_ll - curr_proposal_ll):
-                curr = new_sample
-                curr_ll = new_sample_ll
-                n_accepts += 1
-                if i > num_warmup:
-                    n_accepts_samples += 1
-            if i > num_warmup:
-                chain.append(curr)
-        print("Accept %%: %f %%" % (n_accepts/num_samples))
-        print("Accept sampling %%: %f %%" % (n_accepts_samples/(num_samples - num_warmup)))
-        return np.vstack(chain)
+        total_accept = 0
+        total_accept_samples = 0
+        total_samples = 0
+        total_post_warmup = 0
+        samples = []
+        for v in res:
+            a, acs, ns, nps, s = v
+            total_accept += a
+            total_accept_samples += acs
+            total_samples += ns
+            total_post_warmup += nps
+            samples.append(s)
+        
+        print("Accepted Sample: %f%%" % ((total_accept_samples * 100)/(total_post_warmup)))
+        return np.vstack(samples)
 
-class HMC(object):
+class MetropolisHastings(MCMCSampler):
+
+    def __init__(self, model):
+        self.model = model
+        self.lp = model.log_prob
+
+    def train(self, num_samples, num_chains = 1, num_cores = None, proposal = None, proposal_ll = None, num_warmup = None, init = None):
+        
+        def draw_samples(num_samples = num_samples, proposal = proposal, proposal_ll = proposal_ll, num_warmup = num_warmup, init = init):
+            n_params = self.model.get_params().shape[1]
+            if init is None:
+                init = self.model.get_params()
+            if num_warmup is None:
+                num_warmup = num_samples/2
+            if proposal is None:
+                proposal = lambda theta: np.random.multivariate_normal(theta[0,:], np.eye(n_params)).reshape(1,-1)
+                proposal_ll = lambda x, theta: np.sum(multivariate_normal.logpdf(x[0,:], theta[0,:], np.eye(n_params)))
+
+            curr = init
+            curr_ll = self.model.log_prob(curr)
+            chain = []
+            n_accepts = 0
+            n_accepts_samples = 0
+        
+            for i in range(num_samples):
+                # Draw a new sample from the proposal
+                new_sample = proposal(curr)
+                new_sample_ll = self.model.log_prob(new_sample)
+                
+                # Metropolis correction
+                new_proposal_ll = new_sample_ll + proposal_ll(curr, new_sample)
+                curr_proposal_ll = curr_ll + proposal_ll(new_sample, curr)
+               
+                if np.log(np.random.rand()) < np.minimum(0., new_proposal_ll - curr_proposal_ll):
+                    curr = new_sample
+                    curr_ll = new_sample_ll
+                    n_accepts += 1
+                    if i >= num_warmup:
+                        n_accepts_samples += 1
+                if i >= num_warmup:
+                    chain.append(curr)
+            return n_accepts, n_accepts_samples, num_samples, num_samples - num_warmup, np.vstack(chain)
+        return self.multichain_sampling(draw_samples, num_chains = num_chains, num_cores = num_cores)
+
+class HMC(MCMCSampler):
 
     def __init__(self, model):
         self.model = model
@@ -74,56 +108,32 @@ class HMC(object):
 
         return q, new_lp, curr_lp - new_lp + np.sum(curr_p**2)/2 - np.sum(p**2)/2
 
-    def train(self, num_samples, step_size = 0.01, integration_steps = 20, num_warmup = None, init = None):
-        
-        n_params = self.model.get_params().shape[1]
-        if init is None:
-            init = self.model.get_params()
-        if num_warmup is None:
-            num_warmup = num_samples/2
+    def train(self, num_samples, num_chains = 1, num_cores = None, step_size = 0.01, integration_steps = 20, num_warmup = None, init = None):
+       
+        def draw_samples(num_samples = num_samples, num_warmup = num_warmup, step_size = step_size, integration_steps = integration_steps, init = init):
+            n_params = self.model.get_params().shape[1]
+            if init is None:
+                init = self.model.get_params()
+            if num_warmup is None:
+                num_warmup = num_samples/2
 
-        curr = init
-        curr_lp = -self.model.log_prob(curr)
-        chain = []
-        n_accepts = 0
-        n_accepts_samples = 0
-        
-        for i in range(num_samples):
-            # Draw a new sample from the proposal
-            new_sample, new_lp, mh_correction = self.proposal(curr, curr_lp, step_size = step_size, integration_steps = integration_steps)
-            if np.log(np.random.rand()) < np.minimum(0., mh_correction):
-                curr = new_sample
-                curr_lp = new_lp
-                n_accepts += 1
-                if i > num_warmup:
-                    n_accepts_samples += 1
-            if i > num_warmup:
-                chain.append(curr)
-        print("Accept %%: %f %%" % (n_accepts/num_samples))
-        print("Accept sampling %%: %f %%" % (n_accepts_samples/(num_samples - num_warmup)))
-        return np.vstack(chain)
-
-if __name__ == "__main__":
-    from ML_Lib.models.glm import LinearRegression
-   
-    import plotly.offline as pyo
-    import plotly.graph_objs as go
+            curr = init
+            curr_lp = -self.model.log_prob(curr)
+            chain = []
+            n_accepts = 0
+            n_accepts_samples = 0
+            
+            for i in range(num_samples):
+                # Draw a new sample from the proposal
+                new_sample, new_lp, mh_correction = self.proposal(curr, curr_lp, step_size = step_size, integration_steps = integration_steps)
+                if np.log(np.random.rand()) < np.minimum(0., mh_correction):
+                    curr = new_sample
+                    curr_lp = new_lp
+                    n_accepts += 1
+                    if i >= num_warmup:
+                        n_accepts_samples += 1
+                if i >= num_warmup:
+                    chain.append(curr)
+            return n_accepts, n_accepts_samples, num_samples, num_samples - num_warmup, np.vstack(chain)
     
-    g = LinearRegression(2)
-    X = np.vstack((np.ones(100), np.linspace(-5,5,100))).T
-    y = g.evaluate_linear(np.array([2,5]).reshape(1,-1), X)
-
-    g.set_data(X, y)
-    m = HMC(g)
-    samples = m.train(num_samples = 100, step_size = 0.01, integration_steps = 20)
-    """
-    data = []
-    for i in range(len(samples)):
-        output = g.predict(samples[i], X)[0,:,0] #+ np.random.normal(0,1,size = 100)
-        data.append(go.Scatter(x = X[:,1], y = output, opacity = 0.1))
-    data.append(go.Scatter(x = X[:,1], y = y[:,0], mode = 'markers'))
-    layout = go.Layout(showlegend = False)
-    fig = go.Figure(data = data, layout = layout)
-    pyo.plot(fig)
-    """
-
+        return self.multichain_sampling(draw_samples, num_chains = num_chains, num_cores = num_cores)
