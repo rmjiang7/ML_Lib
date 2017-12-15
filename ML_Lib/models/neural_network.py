@@ -24,7 +24,7 @@ class Layer(object):
 
 class FCLayer(Layer):
 
-    def __init__(self, input_dim, output_dim, nonlinearity):
+    def __init__(self, input_dim, output_dim, nonlinearity = lambda x: x):
         super().__init__(input_dim, output_dim)
         self.nonlinearity = nonlinearity
         self.num_weights = (self.m+1)*self.n
@@ -51,7 +51,7 @@ class FCLayer(Layer):
 
 class ConvLayer(Layer):
 
-    def __init__(self, input_dims, kernel_shape, num_filters, nonlinearity = lambda x: x * (x > 0)):
+    def __init__(self, input_dims, kernel_shape, num_filters, nonlinearity = lambda x: x):
         depth = input_dims[0]
         y = input_dims[1]
         x = input_dims[2]
@@ -87,8 +87,8 @@ class ConvLayer(Layer):
         for i in range(len(w)):
             conv = convolve(inputs[i,:], w[i,:], axes=([2,3],[2,3]), dot_axes = ([1], [0]), mode = 'valid')
             conv = conv + b[i,:]
-            convs.append(conv)
-        z = np.array(convs)
+            convs.append(nonlinearity(conv))
+        z = agnp.array(convs)
         return z
 
     def get_params(self):

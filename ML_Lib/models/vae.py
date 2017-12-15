@@ -2,7 +2,7 @@ import numpy as np
 import autograd as ag
 import autograd.numpy as agnp
 from ML_Lib.models.model import Model
-from ML_Lib.models.neural_network import DenseNeuralNetwork
+from ML_Lib.models.neural_network import DenseNeuralNetwork, BaseNeuralNetwork, ConvLayer, FCLayer
 
 class VariationalAutoencoderShared(Model):
 
@@ -28,6 +28,58 @@ class VariationalAutoencoderShared(Model):
             pred = self.decoder.predict(dec_params,z_samp[0,:,:])
             prob = (1/(1 + agnp.exp(-agnp.clip(pred,-300,300))))[0,:,:]
             enc_loss = agnp.sum(X * agnp.log(prob + 1e-10) + (1 - X)*agnp.log(1 - prob + 1e-10),axis = 1)
+            dec_loss = 0.5 * agnp.sum((1 + enc_sig - enc_mu**2 - agnp.exp(enc_sig))[0,:,:],axis=1)
+            return agnp.mean(enc_loss + dec_loss)
+
+        self.log_prob = log_prob
+        g = ag.grad(self.log_prob)
+        self.grad_log_prob = lambda x: agnp.clip(g(x), -1000, 1000)
+
+    def get_params(self):
+        return self.params
+
+    def set_params(self, params):
+        self.params = params
+
+    def predict(self, n_samples = 10, latent_space = None):
+        _,dec_params = self.unpack_params(self.params)
+        if latent_space is None:
+            latent_space = np.random.normal(0, 10, size = (n_samples,self.latent_dim))
+        return (1/(1 + agnp.exp(-agnp.clip(self.decoder.predict(dec_params,latent_space),-300,300))))[0,:,:]
+
+    def encode(self, samples):
+        enc_params,_ = self.unpack_params(self.params)
+        enc = self.encoder.predict(enc_params, samples)
+        enc_mu, enc_sig = enc[:,:,:self.latent_dim], enc[:,:,self.latent_dim:]
+        return enc_mu, enc_sig
+
+class VariationalAutoencoderSharedConv(Model):
+
+    def __init__(self, encoder_dims, decoder_dims, nonlinearity = lambda x: (x > 0)*x):
+        self.nonlinearity = nonlinearity
+        b = BaseNeuralNetwork()
+        b.add_layer(ConvLayer([1,28,28],[5,5],10))
+        b.add_layer(FCLayer(np.prod(b.layers[-1].get_output_shape()), 20, nonlinearity = lambda x: x * (x > 0)))
+        b.add_layer(FCLayer(20, decoder_dims[0] * 2, nonlinearity = lambda x : x))
+        self.encoder = b
+        self.decoder = DenseNeuralNetwork(decoder_dims, nonlinearity)
+        self.latent_dim = decoder_dims[0]
+        self.params = np.hstack([self.encoder.get_params(),self.decoder.get_params()])
+        
+    def unpack_params(self, params):
+        n_encoder_params = self.encoder.get_params().shape[1]
+        return params[:,:n_encoder_params], \
+               params[:,n_encoder_params:]
+
+    def set_data(self, X):
+        def log_prob(params):
+            enc_params, dec_params = self.unpack_params(params)
+            enc = self.encoder.predict(enc_params, X)
+            enc_mu, enc_sig = enc[:,:,:self.latent_dim], enc[:,:,self.latent_dim:]
+            z_samp = enc_mu + agnp.sqrt(agnp.exp(enc_sig) + 1e-10) * agnp.random.normal(0,1,size=(1,enc_mu.shape[1],enc_mu.shape[2]))
+            pred = self.decoder.predict(dec_params,z_samp[0,:,:])
+            prob = (1/(1 + agnp.exp(-agnp.clip(pred,-300,300))))[0,:,:]
+            enc_loss = agnp.sum(X.reshape((X.shape[0],-1)) * agnp.log(prob + 1e-10) + (1 - X.reshape((X.shape[0],-1)))*agnp.log(1 - prob + 1e-10),axis = 1)
             dec_loss = 0.5 * agnp.sum((1 + enc_sig - enc_mu**2 - agnp.exp(enc_sig))[0,:,:],axis=1)
             return agnp.mean(enc_loss + dec_loss)
 
@@ -84,7 +136,7 @@ class VariationalAutoencoder(Model):
             return agnp.mean(enc_loss + dec_loss)
 
         self.log_prob = log_prob
-        g = ag.grad(self.log_prob)
+        g = ag.elementwise_grad(self.log_prob)
         self.grad_log_prob = lambda x: agnp.clip(g(x), -1000, 1000)
 
     def get_params(self):
@@ -111,11 +163,11 @@ if __name__ == "__main__":
     from tensorflow.examples.tutorials.mnist import input_data
     import scipy.misc
     import sys
-    import matplotlib.pyplot as plt
-
+    
     mnist = input_data.read_data_sets("/Users/richardjiang/GradMLearning/datasets/MNIST_data/", one_hot=True)
     #vae = VariationalAutoencoder([784,200,200,20],[20,200,200,784])
-    vae = VariationalAutoencoderShared([784,500,500,40],[20,500,500,784])
+    #vae = VariationalAutoencoderShared([784,500,500,40],[20,500,500,784])
+    vae = VariationalAutoencoderSharedConv([784,200,200,20],[20,200,200,784])
     if sys.argv[1] == 'train':
         print("Starting training!")
         try:
@@ -124,9 +176,9 @@ if __name__ == "__main__":
                 l = 0
                 for j in range(int(mnist.train.num_examples/200)):
                     batch_xs, _ = mnist.train.next_batch(200)
-                    vae.set_data(batch_xs)
+                    vae.set_data(batch_xs.reshape((batch_xs.shape[0],1,28,28)))
                     m = MAP(vae)
-                    m.train(step_size = 0.01,num_iters=5)
+                    m.train(step_size = 0.01,num_iters=1)
                     l += vae.log_prob(vae.get_params())
                 
                 print("Epoch %d" % (i))
@@ -136,11 +188,13 @@ if __name__ == "__main__":
             print("Saving VAE params!")
             np.save("/Users/richardjiang/Downloads/vae_params.npy", vae.get_params())
     elif sys.argv[1] == 'test':
+        import matplotlib.pyplot as plt
+
         params = np.load("/Users/richardjiang/Downloads/vae_params.npy")
         vae.set_params(params)
             
         batch_xs, _ = mnist.train.next_batch(10)
-        enc_mu, enc_sig = vae.encode(batch_xs)
+        enc_mu, enc_sig = vae.encode(batch_xs.reshape((10,1,28,28)))
         z_samp = enc_mu + agnp.sqrt(agnp.exp(enc_sig)) * agnp.random.normal(0,1,size=(1,enc_mu.shape[1],enc_mu.shape[2]))
         out = vae.predict(latent_space = z_samp[0,:,:])
 
