@@ -61,6 +61,7 @@ class ConvLayer(Layer):
         self.num_filter_weights = depth * num_filters * kernel_shape[0] * kernel_shape[1]
         self.filter_weights_shape = (depth, self.num_filters, kernel_shape[0], kernel_shape[1])
         self.bias_shape = (1, num_filters, 1, 1)
+        self.nonlinearity = nonlinearity
             
         self.output_dim = (self.num_filters,) + self.conv_output_shape(input_dims[1:], self.kernel_shape)
          
@@ -87,7 +88,7 @@ class ConvLayer(Layer):
         for i in range(len(w)):
             conv = convolve(inputs[i,:], w[i,:], axes=([2,3],[2,3]), dot_axes = ([1], [0]), mode = 'valid')
             conv = conv + b[i,:]
-            convs.append(nonlinearity(conv))
+            convs.append(self.nonlinearity(conv))
         z = agnp.array(convs)
         return z
 
@@ -116,17 +117,6 @@ class BaseNeuralNetwork(Model):
         for i, w in enumerate(self.unpack_layers(weights)):
             inputs = self.layers[i].forward(w, inputs)
         return inputs
-    
-    def set_data(self, X, y):
-
-        def log_prob(weights):
-            pred = self.predict(weights, X)
-            log_prior = agnp.sum(norm.logpdf(weights, 0, 1), axis = 1)
-            log_likelihood = agnp.sum(norm.logpdf(y, pred, 0.01), axis = 1)[:,0]
-            return log_likelihood + log_prior
-
-        self.log_prob = log_prob
-        self.grad_log_prob = autograd.elementwise_grad(log_prob)
 
     def add_layer(self, layer):
         self.layers.append(layer)
@@ -150,36 +140,3 @@ class DenseNeuralNetwork(BaseNeuralNetwork):
             self.add_layer(FCLayer(m, n, self.nonlinearity))
 
         self.add_layer(FCLayer(shapes[-1][0], shapes[-1][1], nonlinearity = lambda x: x))
-
-    
-if __name__ == '__main__':
-    import plotly.offline as pyo
-    import plotly.graph_objs as go
-    from autograd.misc.optimizers import adam
-    
-    """
-    b = BaseNeuralNetwork()
-    b.add_layer(ConvLayer([3,32,32],[5,5],2))
-    b.add_layer(FCLayer(np.prod(b.layers[-1].get_output_shape()), 20, nonlinearity = lambda x: x * (x > 0)))
-    b.add_layer(FCLayer(20, 10, nonlinearity = lambda x : x))
-
-    input = np.zeros((4,3,32,32))
-    output = b.predict(np.vstack((b.get_params(),b.get_params())), input)
-    print(output.shape)
-    #output = b.predict(b.get_params(), input)
-
-    """
-    layer_dims = [1, 20, 20, 1]
-    nonlinearity = lambda x: (x > 0)*x
-    
-    nn = DenseNeuralNetwork(layer_dims, nonlinearity)
-    input = agnp.linspace(-1,1, 100).reshape(-1,1)
-    target = agnp.sin(input) + agnp.random.normal(0,1,size = input.shape)
-    #nn.set_data(input, target)
-    params = nn.get_params()
-    #params = adam(lambda x, i: -nn.grad_log_prob(x), params, step_size = 0.1, num_iters = 3000)
-    #print(nn.log_prob(params))
-    output = nn.predict(np.vstack((params,params)), input)
-    #scatter = go.Scatter(x = input[:,0], y = output[0,:,0], name = 'Fit')
-    #truth = go.Scatter(x = input[:,0], y = target[:,0], mode = 'markers', name = 'Truth')
-    #pyo.plot([scatter, truth])

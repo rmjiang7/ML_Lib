@@ -49,6 +49,10 @@ class MeanField(VariationalDistribution):
         _, log_std = self.unpack_params(params)
         return 0.5 * self.n_params * (1.0 + agnp.log(2 * agnp.pi)) + agnp.sum(log_std)
 
+    def fisher_diag(self, params):
+        mu, log_std = self.unpack_params(params)
+        return agnp.concatenate([agnp.exp(-2.*log_std), agnp.ones(len(log_sigma))*2])
+
     def jacobian_adjustment(self, params):
         _, log_std = self.unpack_params(params)
         return agnp.sum(agnp.log(agnp.abs(agnp.exp(log_std))))
@@ -95,7 +99,7 @@ class BlackBoxKLQPScore(VariationalInference):
             samples = self.v_dist.sample(params, n_mc_samples)
             elbo = self.v_dist.entropy(params) + agnp.mean(self.model.log_prob(samples))
             return -elbo
-        
+
         grad_elbo = autograd.grad(variational_objective)
         ret = adam(lambda x, i : grad_elbo(x,i), self.v_dist.get_params(), step_size = step_size, num_iters = num_iters, callback = callback)
         self.v_dist.set_params(ret)
@@ -156,34 +160,4 @@ class BlackBoxKLQPReparam(VariationalInference):
         self.v_params = ret
         return ret
 
-if __name__ == "__main__":
-    
-    from ML_Lib.models.neural_network import NeuralNetwork
-    from ML_Lib.inference.map import MAP
-    import plotly.offline as pyo
-    import plotly.graph_objs as go
-    import autograd.numpy as agnp
-    
-    layer_dims = [1, 20, 1]
-    nonlinearity = lambda x: agnp.exp(-x**2)
 
-    nn = NeuralNetwork(layer_dims, nonlinearity)
-
-    input = np.concatenate([np.linspace(0,2,num=20), np.linspace(6,8,num=20)])
-    target = np.cos(input) + np.random.randn(40) * 0.1
-    input = (input - 4.0)/4.0
-    input = input.reshape((len(input), 1))
-    target = target.reshape((len(target), 1))
-    nn.set_data(input, target)
-   
-    m = BlackBoxKLQPScore(nn)
-    for i in range(10):
-        m.train(n_mc_samples = 200)
-
-    data = [go.Scatter(x = input[:,0], y = target[:,0], mode = 'markers')]
-    for i in range(1000):
-        scatter = go.Scatter(x = input[:,0], y = nn.predict(m.sample(1), input)[0,:,0], opacity = 0.1, hoverinfo = False)
-        data.append(scatter)
-    layout = go.Layout(showlegend = False)
-    fig = go.Figure(data = data, layout = layout)
-    pyo.plot(fig)

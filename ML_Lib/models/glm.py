@@ -1,11 +1,11 @@
 import numpy as np
-from ML_Lib.models.model import Model
+from ML_Lib.models.model import ProbabilityModel
 import autograd
 import autograd.numpy as agnp
 import autograd.scipy as agsp
 from autograd.scipy.stats import norm
 
-class GLM(Model):
+class GLM(ProbabilityModel):
 
     def __init__(self, n_dims):
         self.n_dims = n_dims
@@ -22,18 +22,22 @@ class GLM(Model):
 
 class LinearRegression(GLM):
 
+    def __init__(self,n_dims):
+        super().__init__(n_dims)
+        self.full_grad_log_prob = autograd.elementwise_grad(self.full_log_prob)
+
     def predict(self, params, X):
         return np.expand_dims(self.evaluate_linear(params, X),2)
 
+    def full_log_prob(self, params, X, y):
+        y_hat = self.evaluate_linear(params, X)
+        log_prior = agnp.sum(norm.logpdf(params, 0, 1), axis = 1)
+        log_likelihood = agnp.sum(-(y - y_hat)**2)
+        return log_likelihood + log_prior
+
     def set_data(self, X, y):
-        def log_prob(params):
-            y_hat = self.evaluate_linear(params, X)
-            log_prior = agnp.sum(norm.logpdf(params, 0, 1), axis = 1)
-            log_likelihood = agnp.sum(-(y - y_hat)**2)
-            return log_likelihood + log_prior
-        
-        self.log_prob = log_prob
-        self.grad_log_prob = autograd.elementwise_grad(log_prob)
+        self.log_prob = lambda params: self.full_log_prob(params, X, y)
+        self.grad_log_prob = lambda params: self.full_grad_log_prob(params, X, y)
     
     def get_conjugate_posterior(self, X, y):
         mu_0 = np.zeros(self.n_dims)
@@ -47,18 +51,22 @@ class LinearRegression(GLM):
 
 class LogisticRegression(GLM):
 
+    def __init__(self):
+        super().__init__(n_dims)
+        self.full_grad_log_prob = autograd.elementwise_grad(self.full_log_prob)
+    
     def inv_logit(self, Z):
         return 1/(1 + agnp.exp(-Z))
 
     def predict(self, params, X, cutoff = 0.5):
         return (np.expand_dims(self.inv_logit(self.evaluate_linear(params, X)),2) > cutoff).astype(int)
 
+    def full_log_prob(self, params, X, y):
+        prob_hat = self.inv_logit(self.evaluate_linear(params, X))
+        prob_hat_neg = 1 - prob_hat
+        ll = agnp.einsum('km,m->k', agnp.log(prob_hat), y) + agnp.einsum('km,m->k', agnp.log(prob_hat_neg), 1-y)
+        return ll.reshape(-1,1)
+
     def set_data(self, X, y):
-        def log_prob(params):
-            prob_hat = self.inv_logit(self.evaluate_linear(params, X))
-            prob_hat_neg = 1 - prob_hat
-            ll = agnp.einsum('km,m->k', agnp.log(prob_hat), y) + agnp.einsum('km,m->k', agnp.log(prob_hat_neg), 1-y)
-            return ll.reshape(-1,1)
-        
-        self.log_prob = log_prob
-        self.grad_log_prob = autograd.elementwise_grad(log_prob)
+        self.log_prob = lambda params: self.full_log_prob(params, X, y)
+        self.grad_log_prob = lambda params: self.full_grad_log_prob(params, X, y)

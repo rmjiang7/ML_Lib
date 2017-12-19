@@ -1,19 +1,18 @@
 import numpy as np
-from ML_Lib.models.model import Model
+from ML_Lib.models.model import ProbabilityModel
 import autograd
 import autograd.numpy as agnp
 import autograd.scipy as agsp
 
-class TargetDistribution(Model):
+class TargetDistribution(ProbabilityModel):
 
     def __init__(self, n_dims, log_prob):
         self.n_dims = n_dims
         self.params = np.zeros((1,self.n_dims))
-        self.set_distribution(log_prob)
-
-    def set_distribution(self, log_prob):
+        self.full_log_prob = lambda params, x : log_prob
+        self.full_grad_log_prob = lambda params, X: autograd.elementwise_grad(self.full_log_prob)
         self.log_prob = log_prob
-        self.grad_log_prob = autograd.elementwise_grad(log_prob)
+        self.grad_log_prob = autograd.elementwise_grad(self.log_prob)
 
     def get_params(self):
         return self.params
@@ -74,7 +73,6 @@ if __name__ == '__main__':
 
     td = TargetDistribution(2, mx.log_prob)
     
-    """
     vi = BlackBoxKLQPReparam(td)
     vi.train(n_mc_samples = 5000) 
     vi_samples = vi.sample(1000)
@@ -90,3 +88,4 @@ if __name__ == '__main__':
     hmc = go.Scatter(x = hmc_samples[:,0], y = hmc_samples[:,1], mode = 'markers', name = 'HMC')
     truth = go.Scatter(x = s[:,0], y = s[:,1], mode = 'markers', name = 'Truth')
     pyo.plot([truth, hmc])
+    """
