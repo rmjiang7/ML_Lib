@@ -6,6 +6,9 @@ from autograd.scipy.stats import norm
 from autograd.scipy.signal import convolve
 from ML_Lib.models.model import Model
 
+def sigmoid(x):
+    return 0.5*(agnp.tanh(x) + 1.0)   # Output ranges from 0 to 1.
+
 class Layer(object):
 
     def __init__(self, input_dim, output_dim):
@@ -98,6 +101,140 @@ class ConvLayer(Layer):
     def set_params(self, params):
         self.params = params
 
+class RNNLayer(Layer):
+
+    def __init__(self, input_dim, hidden_dim, output_dim, hidden_nonlinearity = lambda x: x, output_nonlinearity = lambda x: x):
+        super().__init__(input_dim, output_dim)
+        self.hidden_dim = hidden_dim
+        self.num_weights = (self.m + self.hidden_dim + 1) * self.hidden_dim + (self.hidden_dim + 1) * self.n
+        self.hidden_nonlinearity = hidden_nonlinearity
+        self.output_nonlinearity = output_nonlinearity
+
+        self.hidden_init = agnp.random.randn(self.hidden_dim)
+        self.params = np.random.normal(0, np.sqrt(2/(self.m + self.n)), size = (1,self.num_weights))
+
+    def unpack_hidden_params(self, weights):
+        W_hidden = weights[:,:(self.m + self.hidden_dim) * self.hidden_dim]
+        b_hidden = weights[:,(self.m + self.hidden_dim) * self.hidden_dim: (self.m + self.hidden_dim + 1) * self.hidden_dim]
+        return W_hidden.reshape((-1,self.m + self.hidden_dim, self.hidden_dim)), b_hidden.reshape((-1, 1, self.hidden_dim))
+
+    def unpack_output_params(self, weights):
+        W_output = weights[:,(self.m + self.hidden_dim + 1) * self.hidden_dim: (self.m + self.hidden_dim + 1) * self.hidden_dim + self.hidden_dim * self.n]
+        b_output = weights[:,(self.m + self.hidden_dim + 1) * self.hidden_dim + self.hidden_dim * self.n:]
+        return W_output.reshape((-1,self.hidden_dim, self.n)), b_output.reshape((-1, 1, self.n))
+    
+    def update_hidden(self, weights, input, hidden):
+        concated_input = agnp.concatenate((input, hidden),axis = 2)
+        W_hidden, b_hidden = self.unpack_hidden_params(weights)
+        return self.hidden_nonlinearity(agnp.einsum('pdh,pnd->pnh', W_hidden, concated_input) + b_hidden)
+
+    def get_output(self, weights, hidden):
+        W_output, b_output = self.unpack_output_params(weights)
+        return self.output_nonlinearity(agnp.einsum('pdh,pnd->pnh', W_output, hidden) + b_output)
+
+    def forward(self, weights, inputs):
+        n_param_sets = inputs.shape[0]
+        sequence_length = inputs.shape[1]
+        n_sequences = inputs.shape[2]
+        
+        hiddens = agnp.expand_dims(agnp.expand_dims(self.hidden_init, 0).repeat(n_sequences, 0),0).repeat(n_param_sets, 0)
+        outputs = [self.get_output(weights, hiddens)]
+        for idx in range(sequence_length):
+            input = inputs[:,idx,:,:]
+            hiddens = self.update_hidden(weights, input, hiddens)
+            outputs.append(self.get_output(weights, hiddens))
+        
+        out = agnp.array(outputs).reshape((inputs.shape[0],inputs.shape[1] + 1, inputs.shape[2], inputs.shape[3]))
+        return out
+
+    def get_params(self):
+        return self.params
+
+    def set_params(self, params):
+        self.params = params
+
+class LSTMLayer(Layer):
+
+    def __init__(self, input_dim, hidden_dim, output_dim, hidden_nonlinearity = lambda x: x, output_nonlinearity = lambda x: x):
+        super().__init__(input_dim, output_dim)
+        self.hidden_dim = hidden_dim
+        self.num_h_weights = (self.m + self.hidden_dim) * self.hidden_dim
+        self.num_b_weights = (self.m + self.hidden_dim + 1) * self.hidden_dim
+        self.num_weights = self.num_b_weights * 4 + (self.hidden_dim + 1) * self.n
+        self.hidden_nonlinearity = hidden_nonlinearity
+        self.output_nonlinearity = output_nonlinearity
+
+        self.hidden_init = agnp.random.randn(self.hidden_dim) * 0.01
+        self.cell_init = agnp.random.randn(self.hidden_dim) * 0.01
+        #self.params = np.random.normal(0, np.sqrt(2/(self.m + self.n)), size = (1,self.num_weights))
+        self.params = agnp.random.randn(1, self.num_weights)
+
+    def unpack_change_params(self, weights):
+        W_change = weights[:,:self.num_h_weights]
+        b_change = weights[:,self.num_h_weights:self.num_b_weights]
+        return W_change.reshape((-1,self.m + self.hidden_dim, self.hidden_dim)), b_change.reshape((-1, 1, self.hidden_dim))
+
+    def unpack_forget_params(self, weights):
+        W_forget = weights[:,self.num_b_weights:self.num_b_weights + self.num_h_weights]
+        b_forget = weights[:,self.num_b_weights + self.num_h_weights:self.num_b_weights*2]
+        return W_forget.reshape((-1,self.m + self.hidden_dim, self.hidden_dim)), b_forget.reshape((-1, 1, self.hidden_dim))
+
+    def unpack_ingate_params(self, weights):
+        W_ingate = weights[:,self.num_b_weights*2:self.num_b_weights*2 + self.num_h_weights]
+        b_ingate = weights[:,self.num_b_weights*2 + self.num_h_weights: self.num_b_weights*3]
+        return W_ingate.reshape((-1,self.m + self.hidden_dim, self.hidden_dim)), b_ingate.reshape((-1, 1, self.hidden_dim))
+    
+    def unpack_outgate_params(self, weights):
+        W_outgate = weights[:,self.num_b_weights*3:self.num_b_weights*3 + self.num_h_weights]
+        b_outgate = weights[:,self.num_b_weights*3 + self.num_h_weights: self.num_b_weights*4]
+        return W_outgate.reshape((-1,self.m + self.hidden_dim, self.hidden_dim)), b_outgate.reshape((-1, 1, self.hidden_dim))
+
+    def unpack_output_params(self, weights):
+        W_output = weights[:,self.num_b_weights*4:self.num_b_weights*4 + self.hidden_dim * self.n]
+        b_output = weights[:,self.num_b_weights*4 + self.hidden_dim * self.n:]
+        return W_output.reshape((-1,self.hidden_dim, self.n)), b_output.reshape((-1, 1, self.n))
+
+    def update_hidden(self, weights, input, hidden, cells):
+        concated_input = agnp.concatenate((input, hidden),axis = 2)
+        W_change, b_change = self.unpack_change_params(weights)
+        change = agnp.tanh(agnp.einsum('pdh,pnd->pnh', W_change, concated_input) + b_change)
+        W_forget, b_forget = self.unpack_forget_params(weights)
+        forget = self.hidden_nonlinearity(agnp.einsum('pdh,pnd->pnh', W_forget, concated_input) + b_forget)
+        W_ingate, b_ingate = self.unpack_ingate_params(weights)
+        ingate = self.hidden_nonlinearity(agnp.einsum('pdh,pnd->pnh', W_ingate, concated_input) + b_ingate)
+        W_outgate, b_outgate = self.unpack_outgate_params(weights)
+        outgate = self.hidden_nonlinearity(agnp.einsum('pdh,pnd->pnh', W_outgate, concated_input) + b_outgate)
+        cells = cells * forget + ingate * change
+        hidden = outgate * agnp.tanh(cells)
+        return hidden, cells
+
+    def get_output(self, weights, hidden):
+        W_output, b_output = self.unpack_output_params(weights)
+        return self.output_nonlinearity(agnp.einsum('pdh,pnd->pnh', W_output, hidden) + b_output)
+
+    def forward(self, weights, inputs):
+        n_param_sets = inputs.shape[0]
+        sequence_length = inputs.shape[1]
+        n_sequences = inputs.shape[2]
+        
+        hiddens = agnp.expand_dims(agnp.expand_dims(self.hidden_init, 0).repeat(n_sequences, 0),0).repeat(n_param_sets, 0)
+        cells = agnp.expand_dims(agnp.expand_dims(self.cell_init, 0).repeat(n_sequences, 0),0).repeat(n_param_sets, 0)
+        
+        outputs = [self.get_output(weights, hiddens)]
+        for idx in range(sequence_length):
+            input = inputs[:,idx,:,:]
+            hiddens, cells = self.update_hidden(weights, input, hiddens, cells)
+            outputs.append(self.get_output(weights, hiddens))
+        
+        out = agnp.array(outputs).reshape((inputs.shape[0],inputs.shape[1] + 1, inputs.shape[2], inputs.shape[3]))
+        return out
+
+    def get_params(self):
+        return self.params
+
+    def set_params(self, params):
+        self.params = params
+
 class BaseNeuralNetwork(Model):
 
     def __init__(self):
@@ -127,7 +264,7 @@ class BaseNeuralNetwork(Model):
 
     def set_params(self, weights):
         for i, w in enumerate(self.unpack_layers(weights)):
-            self.layers[i].set_params(w[0,:,:])
+            self.layers[i].set_params(w[0,:])
 
 class DenseNeuralNetwork(BaseNeuralNetwork):
 
@@ -140,3 +277,86 @@ class DenseNeuralNetwork(BaseNeuralNetwork):
             self.add_layer(FCLayer(m, n, self.nonlinearity))
 
         self.add_layer(FCLayer(shapes[-1][0], shapes[-1][1], nonlinearity = lambda x: x))
+
+if __name__ == '__main__':
+    from os.path import join, dirname
+    from ML_Lib.models.model import ProbabilityModel
+    from ML_Lib.inference.map import MAP
+
+    def string_to_one_hot(string, maxchar):
+        """Converts an ASCII string to a one-of-k encoding."""
+        ascii = np.array([ord(c) for c in string]).T
+        return np.array(ascii[:,None] == np.arange(maxchar)[None, :], dtype=int)
+
+    def one_hot_to_string(one_hot_matrix):
+        return "".join([chr(np.argmax(c)) for c in one_hot_matrix])
+
+    def build_dataset(filename, sequence_length, alphabet_size, max_lines=-1):
+        """Loads a text file, and turns each line into an encoded sequence."""
+        with open(filename) as f:
+            content = f.readlines()
+        content = content[:max_lines]
+        content = [line for line in content if len(line) > 2]   # Remove blank lines
+        seqs = np.zeros((sequence_length, len(content), alphabet_size))
+        for ix, line in enumerate(content):
+            padded_line = (line + " " * sequence_length)[:sequence_length]
+            seqs[:, ix, :] = string_to_one_hot(padded_line, alphabet_size)
+        return seqs
+
+    num_chars = 128
+
+    # Learn to predict our own source code.
+    text_filename = join(dirname(__file__), 'neural_network.py')
+    train_inputs = build_dataset(text_filename, sequence_length=30,
+                                 alphabet_size=num_chars, max_lines=60)
+
+    class SimpleRNNWordModel(ProbabilityModel):
+
+        def __init__(self):
+            self.b = BaseNeuralNetwork()
+            self.b.add_layer(LSTMLayer(train_inputs.shape[2], 40, train_inputs.shape[2], hidden_nonlinearity = sigmoid))
+            self.params = self.b.get_params()
+        
+            self.full_grad_log_prob = autograd.elementwise_grad(self.full_log_prob)
+
+        def full_log_prob(self, params, X, y):
+            loglik = np.zeros((len(params), 1))
+            output = self.b.predict(params, X)
+            # Output: n_param_sets, sequence_length, n_sequences, n_output_dim
+            logprobs = output - logsumexp(output, axis = 3, keepdims = True)
+            sequence_length, n_sequences, _ = X.shape
+            for t in range(sequence_length):
+                loglik += agnp.sum(logprobs[:,t,:,:] * y[t],axis = (1,2))
+            return loglik/(sequence_length * n_sequences)
+
+        def predict(self, params, X):
+            output = self.b.predict(params, X)
+            # Output: n_param_sets, sequence_length, n_sequences, n_output_dim
+            logprobs = output - logsumexp(output, axis = 3, keepdims = True)
+            return logprobs
+
+        def set_data(self, X, y):
+            self.log_prob = lambda params: self.full_log_prob(params, X, y)
+            self.grad_log_prob = lambda params: agnp.clip(self.full_grad_log_prob(params, X, y), -1000, 1000)
+
+        def get_params(self):
+            return self.params
+
+        def set_params(self, params):
+            self.params = params
+            self.b.set_params(params)
+
+    s = SimpleRNNWordModel()
+    s.set_data(train_inputs, train_inputs)
+    s.full_grad_log_prob(s.get_params(), train_inputs, train_inputs)
+    m = MAP(s)
+    for i in range(5):
+        m.train(num_iters = 1000)
+
+    for t in range(20):
+        text = ""
+        for i in range(30):
+            seqs = string_to_one_hot(text, 128)[:, np.newaxis, :]
+            logprobs = s.predict(s.get_params(), seqs)[0,-1].ravel()
+            text += chr(np.random.choice(len(logprobs), p = np.exp(logprobs)))
+        print(text)
