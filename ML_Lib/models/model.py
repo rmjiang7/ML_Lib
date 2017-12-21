@@ -17,10 +17,12 @@ class ProbabilityModel(Model):
     def full_log_prob(self, params, *args):
         raise NotImplementedException("Must be implemented in subclass!")
 
-    def full_grad_log_prob(self, params, *args):
-        raise NotImplementedException("Must be implemented in subclass!")
-    
     def log_prob(self, params):
+        raise NotImplementedException("Must be implemented in subclass!")
+
+class DifferentiableProbabilityModel(ProbabilityModel):
+
+    def full_grad_log_prob(self, params, *args):
         raise NotImplementedException("Must be implemented in subclass!")
 
     def grad_log_prob(self, params):

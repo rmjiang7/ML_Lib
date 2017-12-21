@@ -1,11 +1,11 @@
 import numpy as np
-from ML_Lib.models.model import ProbabilityModel
+from ML_Lib.models.model import DifferentiableProbabilityModel
 import autograd
 import autograd.numpy as agnp
 import autograd.scipy as agsp
 from autograd.scipy.stats import norm
 
-class GLM(ProbabilityModel):
+class GLM(DifferentiableProbabilityModel):
 
     def __init__(self, n_dims):
         self.n_dims = n_dims

@@ -1,13 +1,19 @@
 import numpy as np
 import autograd.numpy as agnp
+import autograd.scipy as agsp
 import autograd
 from autograd.scipy.misc import logsumexp
-from autograd.scipy.stats import norm
 from autograd.scipy.signal import convolve
 from ML_Lib.models.model import Model
 
 def sigmoid(x):
     return 0.5*(agnp.tanh(x) + 1.0)   # Output ranges from 0 to 1.
+
+def relu(x):
+    return x * (x > 0)
+
+def linear(x):
+    return x
 
 class Layer(object):
 
@@ -27,7 +33,7 @@ class Layer(object):
 
 class FCLayer(Layer):
 
-    def __init__(self, input_dim, output_dim, nonlinearity = lambda x: x):
+    def __init__(self, input_dim, output_dim, nonlinearity = linear):
         super().__init__(input_dim, output_dim)
         self.nonlinearity = nonlinearity
         self.num_weights = (self.m+1)*self.n
@@ -54,7 +60,7 @@ class FCLayer(Layer):
 
 class ConvLayer(Layer):
 
-    def __init__(self, input_dims, kernel_shape, num_filters, nonlinearity = lambda x: x):
+    def __init__(self, input_dims, kernel_shape, num_filters, nonlinearity = linear):
         depth = input_dims[0]
         y = input_dims[1]
         x = input_dims[2]
@@ -103,7 +109,7 @@ class ConvLayer(Layer):
 
 class RNNLayer(Layer):
 
-    def __init__(self, input_dim, hidden_dim, output_dim, hidden_nonlinearity = lambda x: x, output_nonlinearity = lambda x: x):
+    def __init__(self, input_dim, hidden_dim, output_dim, hidden_nonlinearity = linear, output_nonlinearity = linear):
         super().__init__(input_dim, output_dim)
         self.hidden_dim = hidden_dim
         self.num_weights = (self.m + self.hidden_dim + 1) * self.hidden_dim + (self.hidden_dim + 1) * self.n
@@ -155,7 +161,7 @@ class RNNLayer(Layer):
 
 class LSTMLayer(Layer):
 
-    def __init__(self, input_dim, hidden_dim, output_dim, hidden_nonlinearity = lambda x: x, output_nonlinearity = lambda x: x):
+    def __init__(self, input_dim, hidden_dim, output_dim, hidden_nonlinearity = linear, output_nonlinearity = linear):
         super().__init__(input_dim, output_dim)
         self.hidden_dim = hidden_dim
         self.num_h_weights = (self.m + self.hidden_dim) * self.hidden_dim
@@ -166,7 +172,6 @@ class LSTMLayer(Layer):
 
         self.hidden_init = agnp.random.randn(self.hidden_dim) * 0.01
         self.cell_init = agnp.random.randn(self.hidden_dim) * 0.01
-        #self.params = np.random.normal(0, np.sqrt(2/(self.m + self.n)), size = (1,self.num_weights))
         self.params = agnp.random.randn(1, self.num_weights)
 
     def unpack_change_params(self, weights):
@@ -268,7 +273,7 @@ class BaseNeuralNetwork(Model):
 
 class DenseNeuralNetwork(BaseNeuralNetwork):
 
-    def  __init__(self, layer_dims, nonlinearity = lambda x: (x > 0)*x):
+    def  __init__(self, layer_dims, nonlinearity = lambda x: linear):
         super().__init__()
         self.nonlinearity = nonlinearity
         
@@ -280,8 +285,9 @@ class DenseNeuralNetwork(BaseNeuralNetwork):
 
 if __name__ == '__main__':
     from os.path import join, dirname
-    from ML_Lib.models.model import ProbabilityModel
+    from ML_Lib.models.model import DifferentiableProbabilityModel
     from ML_Lib.inference.map import MAP
+    from ML_Lib.inference.variational_inference import *
 
     def string_to_one_hot(string, maxchar):
         """Converts an ASCII string to a one-of-k encoding."""
@@ -310,11 +316,11 @@ if __name__ == '__main__':
     train_inputs = build_dataset(text_filename, sequence_length=30,
                                  alphabet_size=num_chars, max_lines=60)
 
-    class SimpleRNNWordModel(ProbabilityModel):
+    class SimpleRNNWordModel(DifferentiableProbabilityModel):
 
         def __init__(self):
             self.b = BaseNeuralNetwork()
-            self.b.add_layer(LSTMLayer(train_inputs.shape[2], 40, train_inputs.shape[2], hidden_nonlinearity = sigmoid))
+            self.b.add_layer(RNNLayer(train_inputs.shape[2], 40, train_inputs.shape[2], hidden_nonlinearity = sigmoid))
             self.params = self.b.get_params()
         
             self.full_grad_log_prob = autograd.elementwise_grad(self.full_log_prob)
@@ -326,8 +332,9 @@ if __name__ == '__main__':
             logprobs = output - logsumexp(output, axis = 3, keepdims = True)
             sequence_length, n_sequences, _ = X.shape
             for t in range(sequence_length):
-                loglik += agnp.sum(logprobs[:,t,:,:] * y[t],axis = (1,2))
-            return loglik/(sequence_length * n_sequences)
+                loglik += agnp.sum(logprobs[:,t,:,:] * y[t],axis = (1,2)).reshape((-1,1))
+            log_prior = agnp.sum(agsp.stats.norm.logpdf(params, 0, 1000),axis = 1)
+            return loglik/(sequence_length * n_sequences) + log_prior
 
         def predict(self, params, X):
             output = self.b.predict(params, X)
@@ -348,8 +355,45 @@ if __name__ == '__main__':
 
     s = SimpleRNNWordModel()
     s.set_data(train_inputs, train_inputs)
-    s.full_grad_log_prob(s.get_params(), train_inputs, train_inputs)
-    m = MAP(s)
+    
+    # Getting initial parameters
+    m2 = MAP(s)
+    for _ in range(5):
+        m2.train(num_iters = 100)
+    for t in range(20):
+        text = ""
+        for i in range(30):
+            seqs = string_to_one_hot(text, 128)[:, np.newaxis, :]
+            logprobs = s.predict(s.get_params(), seqs)[0,-1].ravel()
+            text += chr(np.random.choice(len(logprobs), p = np.exp(logprobs)))
+        print(text)
+    
+    m = BlackBoxKLQPScore(s)
+    def callback(weights, iter, grads):
+        if iter % 50 == 0:
+            print("Iteration ============================= %d ========================" % iter)
+            m.v_dist.set_params(weights)
+            mean_params = m.v_dist.v_params[:m.v_dist.n_params].reshape((1,-1))
+            for t in range(5):
+                text = ""
+                for i in range(30):
+                    seqs = string_to_one_hot(text, 128)[:, np.newaxis, :]
+                    logprobs = s.predict(mean_params, seqs)[0,-1].ravel()
+                    text += chr(np.random.choice(len(logprobs), p = np.exp(logprobs)))
+                print(text)
+
+    m.train(1, n_elbo_samples = 5, step_size = 0.001, num_iters = 5000, callback = callback)
+    
+    param_samples = m.sample(1000)
+    mean_params = agnp.mean(param_samples, axis = 0).reshape((1,-1))
+    for t in range(30):
+        text = ""
+        for i in range(30):
+            seqs = string_to_one_hot(text, 128)[:, np.newaxis, :]
+            logprobs = s.predict(mean_params, seqs)[0,-1].ravel()
+            text += chr(np.random.choice(len(logprobs), p = np.exp(logprobs)))
+        print(text)
+    """
     for i in range(5):
         m.train(num_iters = 1000)
 
@@ -360,3 +404,4 @@ if __name__ == '__main__':
             logprobs = s.predict(s.get_params(), seqs)[0,-1].ravel()
             text += chr(np.random.choice(len(logprobs), p = np.exp(logprobs)))
         print(text)
+    """

@@ -1,12 +1,12 @@
 import numpy as np
 from scipy.stats import multivariate_normal, dirichlet
 from scipy.misc import logsumexp
-from ML_Lib.models.model import ProbabilityModel
+from ML_Lib.models.model import DifferentiableProbabilityModel
 import autograd
 import autograd.numpy as agnp
 import autograd.scipy as agsp
 
-class GMM(ProbabilityModel):
+class GMM(DifferentiableProbabilityModel):
 
     def __init__(self, n_mixes, n_dims):
         self.n_mixes = n_mixes

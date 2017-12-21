@@ -1,10 +1,10 @@
 import numpy as np
 import autograd as ag
 import autograd.numpy as agnp
-from ML_Lib.models.model import ProbabilityModel
+from ML_Lib.models.model import DifferentiableProbabilityModel
 from ML_Lib.models.neural_network import DenseNeuralNetwork, BaseNeuralNetwork, ConvLayer, FCLayer
 
-class VariationalAutoencoderShared(ProbabilityModel):
+class VariationalAutoencoderShared(DifferentiableProbabilityModel):
 
     def __init__(self, encoder_dims, decoder_dims, nonlinearity = lambda x: (x > 0)*x):
         self.nonlinearity = nonlinearity
@@ -53,7 +53,7 @@ class VariationalAutoencoderShared(ProbabilityModel):
         enc_mu, enc_sig = enc[:,:,:self.latent_dim], enc[:,:,self.latent_dim:]
         return enc_mu, enc_sig
 
-class VariationalAutoencoderSharedConv(ProbabilityModel):
+class VariationalAutoencoderSharedConv(DifferentiableProbabilityModel):
 
     def __init__(self, encoder_dims, decoder_dims, nonlinearity = lambda x: (x > 0)*x):
         self.nonlinearity = nonlinearity
