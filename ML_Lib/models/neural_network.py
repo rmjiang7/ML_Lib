@@ -286,7 +286,7 @@ class DenseNeuralNetwork(BaseNeuralNetwork):
 if __name__ == '__main__':
     from os.path import join, dirname
     from ML_Lib.models.model import DifferentiableProbabilityModel
-    from ML_Lib.inference.map import MAP
+    from ML_Lib.inference.optimization import MAP
     from ML_Lib.inference.variational_inference import *
 
     def string_to_one_hot(string, maxchar):

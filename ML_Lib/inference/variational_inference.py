@@ -3,6 +3,7 @@ from scipy.stats import norm
 from autograd.misc.optimizers import adam
 import autograd.numpy as agnp
 import autograd
+from ML_Lib.models.model import ProbabilityModel, DifferentiableProbabilityModel
 
 class VariationalDistribution(object):
 
@@ -34,7 +35,7 @@ class MeanField(VariationalDistribution):
         if init is None:
             self.v_params = np.concatenate((np.zeros(self.n_params), -5 * np.ones(self.n_params)))
         else:
-            self.v_params = np.concatenate((np.random.normal(0,1,self.n_params), np.random.normal(0,5,self.n_params)))
+            self.v_params = np.concatenate((init[0,:], np.zeros(self.n_params)))
 
     def unpack_params(self, params):
         mean, log_std = params[:self.n_params], params[self.n_params:]
@@ -51,7 +52,7 @@ class MeanField(VariationalDistribution):
 
     def fisher_diag(self, params):
         mu, log_std = self.unpack_params(params)
-        return agnp.concatenate([agnp.exp(-2.*log_std), agnp.ones(len(log_sigma))*2])
+        return agnp.concatenate([agnp.exp(-2.*log_std), agnp.ones(len(log_std))*2])
 
     def jacobian_adjustment(self, params):
         _, log_std = self.unpack_params(params)
@@ -60,6 +61,37 @@ class MeanField(VariationalDistribution):
     def get_params(self):
         return self.v_params
     
+    def set_params(self, params):
+        self.v_params = params
+
+class FullRank(VariationalDistribution):
+
+    def __init__(self, model, init = None):
+        super().__init__(model)
+        self.is_reparameterizable = True
+        self.n_params = self.model.get_params().shape[1]
+        if init is None:
+            self.v_params = np.concatenate((np.zeros(self.n_params), (agnp.zeros((self.n_params, self.n_params)) + agnp.eye(self.n_params)).flatten()))
+        else:
+            self.v_params = np.concatenate((init[0,:], (agnp.zeros((self.n_params, self.n_params)) + agnp.eye(self.n_params)).flatten()))
+    
+    def unpack_params(self, params):
+        mean, cov_sqrt = params[:self.n_params], params[self.n_params:].reshape((self.n_params, self.n_params))
+        return mean, agnp.dot(cov_sqrt.T, cov_sqrt)
+
+    def sample(self, params, n_samples):
+        mean, cov = self.unpack_params(params)
+        L = agnp.linalg.cholesky(cov)
+        samples = mean + agnp.dot(agnp.random.randn(n_samples, self.n_params), L)
+        return samples
+
+    def entropy(self, params):
+        _, cov = self.unpack_params(params)
+        return 0.5 * self.n_params * (1 + agnp.log(2 * agnp.pi)) + 0.5 * agnp.log(agnp.linalg.det(cov))
+
+    def get_params(self):
+        return self.v_params
+
     def set_params(self, params):
         self.v_params = params
 
@@ -84,24 +116,30 @@ variance as a result.
 """
 class BlackBoxKLQPScore(VariationalInference):
 
-    def __init__(self, model, variational_distribution = MeanField):
+    def __init__(self, model, variational_distribution = MeanField:
+        assert(isinstance(model, ProbabilityModel))
         self.model = model
         self.params = model.get_params()
-        self.v_dist = variational_distribution(self.model)
+        self.v_dist = variational_distribution(self.model, init = self.params)
         assert(self.v_dist.is_reparameterizable)
-
+                        
     def sample(self, n_samples):
         return self.v_dist.sample(self.v_dist.get_params(),n_samples)
 
-    def train(self, n_mc_samples, step_size = 0.01, num_iters = 1000, callback = None):
+    def train(self, n_mc_samples, n_elbo_samples = 20, step_size = 0.01, num_iters = 1000, callback = None):
 
-        def variational_objective(params, t):
+        def variational_objective(params, var_it, n_mc_samples = n_mc_samples):
             samples = self.v_dist.sample(params, n_mc_samples)
             elbo = self.v_dist.entropy(params) + agnp.mean(self.model.log_prob(samples))
             return -elbo
-
-        grad_elbo = autograd.grad(variational_objective)
-        ret = adam(lambda x, i : grad_elbo(x,i), self.v_dist.get_params(), step_size = step_size, num_iters = num_iters, callback = callback)
+        
+        def cb(params, i, g):
+            print("Negative ELBO: %f" % variational_objective(params, i, n_mc_samples = n_elbo_samples))
+            if callback is not None:
+                callback(params, i, g)
+        
+        grad_elbo = autograd.elementwise_grad(variational_objective)
+        ret = adam(lambda x, i : grad_elbo(x,i), self.v_dist.get_params(), step_size = step_size, num_iters = num_iters, callback = cb)
         self.v_dist.set_params(ret)
         return ret
 
@@ -120,6 +158,8 @@ of probability measure via. the Jacobian adjustment.
 class BlackBoxKLQPReparam(VariationalInference):
 
     def __init__(self, model):
+        assert(isinstance(model, DifferentiableProbabilityModel))
+
         self.model = model
         self.params = model.get_params()
         self.n_params = self.params.shape[1]
@@ -159,5 +199,3 @@ class BlackBoxKLQPReparam(VariationalInference):
         ret = adam(grad, self.v_params, step_size = step_size, num_iters = num_iters, callback = callback)
         self.v_params = ret
         return ret
-
-

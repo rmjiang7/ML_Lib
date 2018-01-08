@@ -65,7 +65,7 @@ if __name__ == '__main__':
         def log_prob(self,z):
             lp = []
             for i in range(self.n_mixes):
-                lp.append(agnp.exp(agsp.stats.multivariate_normal.logpdf(z, self.means[i,:], np.eye(self.dims))))
+                lp.append(agnp.exp(agsp.stats.multivariate_normal.logpdf(z, self.means[i,:], 5*np.eye(self.dims))))
             return agnp.log(agnp.array(sum(lp)))
 
     mx = MixtureDistribution(np.array([[-20,-20],[20,20]]))
@@ -73,7 +73,6 @@ if __name__ == '__main__':
     s = mx.sample(1000)
 
     td = TargetDistribution(2, mx.log_prob)
-    
     vi = BlackBoxKLQPScore(td)
     
     # Set up figure.
@@ -88,8 +87,8 @@ if __name__ == '__main__':
         vi_samples = vi.sample(1000)
         
         # Show posterior marginals.
-        ax.set_xlim([-25,25])
-        ax.set_ylim([-25,25])
+        ax.set_xlim([-30,30])
+        ax.set_ylim([-30,30])
 
         ax.plot(s[:,0], s[:,1], 'b.')
         ax.plot(vi_samples[:,0], vi_samples[:,1], 'g.')
@@ -97,19 +96,18 @@ if __name__ == '__main__':
         plt.draw()
         plt.pause(1.0/90.0)
 
-    vi.train(n_mc_samples = 500, step_size = 0.1, num_iters = 1000, callback = callback) 
+    vi.train(n_mc_samples = 1, step_size = 0.5, num_iters = 1000, callback = callback) 
     vi_samples = vi.sample(1000)
     plt.pause(10.0)
     
     #vi = go.Scatter(x = vi_samples[:,0], y = vi_samples[:,1], mode = 'markers', name = 'VI')
     #truth = go.Scatter(x = s[:,0], y = s[:,1], mode = 'markers', name = 'Truth')
     #pyo.plot([truth, vi])
-
+    """ 
     """
     m = HMC(td)
-    hmc_samples = m.train(num_chains = 2, num_samples = 1000, step_size = 0.01, integration_steps = 50)
+    hmc_samples = m.train(num_chains = 8, num_samples = 2000, step_size = 0.01, integration_steps = 50)
 
     hmc = go.Scatter(x = hmc_samples[:,0], y = hmc_samples[:,1], mode = 'markers', name = 'HMC')
     truth = go.Scatter(x = s[:,0], y = s[:,1], mode = 'markers', name = 'Truth')
     pyo.plot([truth, hmc])
-    """

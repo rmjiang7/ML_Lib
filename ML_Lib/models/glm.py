@@ -36,6 +36,8 @@ class LinearRegression(GLM):
         return log_likelihood + log_prior
 
     def set_data(self, X, y):
+        if len(y.shape) == 2:
+            y = y[:,0]
         self.log_prob = lambda params: self.full_log_prob(params, X, y)
         self.grad_log_prob = lambda params: self.full_grad_log_prob(params, X, y)
     
@@ -70,3 +72,47 @@ class LogisticRegression(GLM):
     def set_data(self, X, y):
         self.log_prob = lambda params: self.full_log_prob(params, X, y)
         self.grad_log_prob = lambda params: self.full_grad_log_prob(params, X, y)
+
+if __name__ == "__main__":
+
+    from ML_Lib.inference.variational_inference import BlackBoxKLQPScore
+    import matplotlib.pyplot as plt
+    
+    X_pred = np.vstack((np.ones(10), np.linspace(-10,10,10))).T
+    Xt = np.vstack((np.ones(1),np.linspace(-10,10,1))).T
+    yt = (5*Xt[:,1] + 2 + np.random.normal(0,1,size=1)).reshape((1,1))
+
+    lr = LinearRegression(2)
+    lr.set_data(Xt, yt)
+    
+    vi = BlackBoxKLQPScore(lr)
+    
+    # Set up figure.
+    fig = plt.figure(figsize=(12,8), facecolor='white')
+    ax = fig.add_subplot(121, frameon=False)
+    ax2 = fig.add_subplot(122, frameon=False)
+    plt.show(block=False)
+
+    def callback(params, i, grad):
+        plt.cla()
+        vi.v_dist.set_params(params)
+        vi_samples = vi.sample(1000)
+        mean = np.mean(vi_samples, axis = 0).reshape((1,-1))
+        y_pred = lr.predict(mean, X_pred)[0,:,0]
+        
+        # Show posterior marginals.
+        ax.set_xlim([-7,7])
+        ax.set_ylim([-7,7])
+
+        #ax.plot(s[:,0], s[:,1], 'b.')
+        ax.plot(vi_samples[:,0], vi_samples[:,1], 'g.')
+        ax.plot([2],[5],'b.')
+        ax2.plot(X_pred[:,1], y_pred)
+
+        plt.draw()
+        plt.pause(1.0/90.0)
+
+    vi.train(n_mc_samples = 500, step_size = 0.1, num_iters = 1000, callback = callback) 
+    vi_samples = vi.sample(1000)
+    plt.pause(10.0)
+

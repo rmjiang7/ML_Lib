@@ -109,7 +109,7 @@ class VariationalAutoencoderSharedConv(DifferentiableProbabilityModel):
 
 if __name__ == "__main__":
 
-    from ML_Lib.inference.map import MAP
+    from ML_Lib.inference.optimization import MAP
     from tensorflow.examples.tutorials.mnist import input_data
     import scipy.misc
     import sys

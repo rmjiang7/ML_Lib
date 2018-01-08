@@ -35,11 +35,13 @@ class MCMCSampler(object):
         print("Accepted Sample: %f%%" % ((total_accept_samples * 100)/(total_post_warmup)))
         return np.vstack(samples)
 
+    def train(self, num_samples, num_chains, num_cores):
+        raise NotImplementedException("Must be implemetned in subclass!")
+
 class MetropolisHastings(MCMCSampler):
 
     def __init__(self, model):
-        self.model = model
-        self.lp = model.log_prob
+        super.__init__(model)
 
     def train(self, num_samples, num_chains = 1, num_cores = None, proposal = None, proposal_ll = None, num_warmup = None, init = None):
         
@@ -82,8 +84,7 @@ class MetropolisHastings(MCMCSampler):
 class HMC(MCMCSampler):
 
     def __init__(self, model):
-        self.model = model
-        self.lp = model.log_prob
+        super.__init__(model)
         self.grad_lp = model.grad_log_prob
 
     def integrate_leapfrog(self, p, q, step_size = 0.01, leapfrog_steps = 20):
