@@ -116,7 +116,7 @@ variance as a result.
 """
 class BlackBoxKLQPScore(VariationalInference):
 
-    def __init__(self, model, variational_distribution = MeanField:
+    def __init__(self, model, variational_distribution = MeanField):
         assert(isinstance(model, ProbabilityModel))
         self.model = model
         self.params = model.get_params()
