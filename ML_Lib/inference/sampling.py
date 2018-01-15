@@ -41,7 +41,7 @@ class MCMCSampler(object):
 class MetropolisHastings(MCMCSampler):
 
     def __init__(self, model):
-        super.__init__(model)
+        super().__init__(model)
 
     def train(self, num_samples, num_chains = 1, num_cores = None, proposal = None, proposal_ll = None, num_warmup = None, init = None):
         
@@ -84,7 +84,7 @@ class MetropolisHastings(MCMCSampler):
 class HMC(MCMCSampler):
 
     def __init__(self, model):
-        super.__init__(model)
+        super().__init__(model)
         self.grad_lp = model.grad_log_prob
 
     def integrate_leapfrog(self, p, q, step_size = 0.01, leapfrog_steps = 20):
@@ -112,9 +112,12 @@ class HMC(MCMCSampler):
     def train(self, num_samples, num_chains = 1, num_cores = None, step_size = 0.01, integration_steps = 20, num_warmup = None, init = None):
        
         def draw_samples(num_samples = num_samples, num_warmup = num_warmup, step_size = step_size, integration_steps = integration_steps, init = init):
+            np.random.seed()
             n_params = self.model.get_params().shape[1]
             if init is None:
-                init = self.model.get_params()
+                #init = self.model.get_params()
+                init = np.random.uniform(-10,10, size = self.model.get_params().shape)
+                print(init)
             if num_warmup is None:
                 num_warmup = num_samples/2
 

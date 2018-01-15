@@ -50,26 +50,27 @@ if __name__ == '__main__':
 
     class MixtureDistribution(object):
 
-        def __init__(self, means):
+        def __init__(self, means, std = 5):
             self.means = means
             self.dims = self.means.shape[1]
             self.n_mixes = self.means.shape[0]
+            self.std = 5
 
         def sample(self, N = 100):
             s = []
             for i in range(N):
                 z = np.random.choice(list(range(self.n_mixes)))
-                s.append(np.random.multivariate_normal(self.means[z,:], 5*np.eye(self.dims)))
+                s.append(np.random.multivariate_normal(self.means[z,:], self.std*np.eye(self.dims)))
             return np.array(s)
 
         def log_prob(self,z):
             lp = []
             for i in range(self.n_mixes):
-                lp.append(agnp.exp(agsp.stats.multivariate_normal.logpdf(z, self.means[i,:], 5*np.eye(self.dims))))
+                lp.append(agnp.exp(agsp.stats.multivariate_normal.logpdf(z, self.means[i,:], self.std*np.eye(self.dims))))
             return agnp.log(agnp.array(sum(lp)))
 
-    mx = MixtureDistribution(np.array([[-20,-20],[20,20]]))
-    #mx = BananaDistribution(4,1,np.array([[1,0.7],[0.7,1]]))
+    mx = MixtureDistribution(np.array([[-20,-20],[20,20],[15,15]]))
+    #mx = BananaDistribution(1,1,np.array([[1,0.7],[0.7,1]]))
     s = mx.sample(1000)
 
     td = TargetDistribution(2, mx.log_prob)
@@ -96,18 +97,6 @@ if __name__ == '__main__':
         plt.draw()
         plt.pause(1.0/90.0)
 
-    vi.train(n_mc_samples = 1, step_size = 0.5, num_iters = 1000, callback = callback) 
+    vi.train(n_mc_samples = 200, step_size = 0.1, num_iters = 1000, callback = callback) 
     vi_samples = vi.sample(1000)
     plt.pause(10.0)
-    
-    #vi = go.Scatter(x = vi_samples[:,0], y = vi_samples[:,1], mode = 'markers', name = 'VI')
-    #truth = go.Scatter(x = s[:,0], y = s[:,1], mode = 'markers', name = 'Truth')
-    #pyo.plot([truth, vi])
-    """ 
-    """
-    m = HMC(td)
-    hmc_samples = m.train(num_chains = 8, num_samples = 2000, step_size = 0.01, integration_steps = 50)
-
-    hmc = go.Scatter(x = hmc_samples[:,0], y = hmc_samples[:,1], mode = 'markers', name = 'HMC')
-    truth = go.Scatter(x = s[:,0], y = s[:,1], mode = 'markers', name = 'Truth')
-    pyo.plot([truth, hmc])

@@ -116,7 +116,7 @@ variance as a result.
 """
 class BlackBoxKLQPScore(VariationalInference):
 
-    def __init__(self, model, variational_distribution = MeanField):
+    def __init__(self, model, variational_distribution = FullRank):
         assert(isinstance(model, ProbabilityModel))
         self.model = model
         self.params = model.get_params()
@@ -126,17 +126,20 @@ class BlackBoxKLQPScore(VariationalInference):
     def sample(self, n_samples):
         return self.v_dist.sample(self.v_dist.get_params(),n_samples)
 
-    def train(self, n_mc_samples, n_elbo_samples = 20, step_size = 0.01, num_iters = 1000, callback = None):
+    def train(self, n_mc_samples, n_elbo_samples = 20, step_size = 0.01, num_iters = 1000, verbose = False, callback = None):
 
         def variational_objective(params, var_it, n_mc_samples = n_mc_samples):
             samples = self.v_dist.sample(params, n_mc_samples)
             elbo = self.v_dist.entropy(params) + agnp.mean(self.model.log_prob(samples))
             return -elbo
         
-        def cb(params, i, g):
-            print("Negative ELBO: %f" % variational_objective(params, i, n_mc_samples = n_elbo_samples))
-            if callback is not None:
-                callback(params, i, g)
+        if verbose:
+            def cb(params, i, g):
+                print("Negative ELBO: %f" % variational_objective(params, i, n_mc_samples = n_elbo_samples))
+                if callback is not None:
+                    callback(params, i, g)
+        else:
+            cb = callback
         
         grad_elbo = autograd.elementwise_grad(variational_objective)
         ret = adam(lambda x, i : grad_elbo(x,i), self.v_dist.get_params(), step_size = step_size, num_iters = num_iters, callback = cb)

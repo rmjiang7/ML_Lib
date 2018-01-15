@@ -38,9 +38,9 @@ class MAP(object):
         self.grad = model.grad_log_prob
 
     def train(self, step_size = 0.01, num_iters = 1000, verbose = False, callback = None):
-        init = self.model.params
+        init = self.model.get_params()
         final_params = adam(lambda x, _: -self.grad(x), init, step_size = step_size, num_iters = num_iters, callback = callback)
-        self.model.set_params(final_params)
+        self.model.set_params(final_params.reshape(init.shape))
         return self.model
 
 if __name__ == '__main__':

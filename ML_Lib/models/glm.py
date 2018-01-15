@@ -53,7 +53,7 @@ class LinearRegression(GLM):
 
 class LogisticRegression(GLM):
 
-    def __init__(self):
+    def __init__(self,n_dims):
         super().__init__(n_dims)
         self.full_grad_log_prob = autograd.elementwise_grad(self.full_log_prob)
     

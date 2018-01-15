@@ -269,7 +269,7 @@ class BaseNeuralNetwork(Model):
 
     def set_params(self, weights):
         for i, w in enumerate(self.unpack_layers(weights)):
-            self.layers[i].set_params(w[0,:])
+            self.layers[i].set_params(w[0:1,:])
 
 class DenseNeuralNetwork(BaseNeuralNetwork):
 
