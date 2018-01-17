@@ -60,8 +60,11 @@ class LogisticRegression(GLM):
     def inv_logit(self, Z):
         return 1/(1 + agnp.exp(-Z))
 
-    def predict(self, params, X, cutoff = 0.5):
-        return (np.expand_dims(self.inv_logit(self.evaluate_linear(params, X)),2) > cutoff).astype(int)
+    def predict(self, params, X, cutoff = 0.5, as_probs = False):
+        if as_probs:
+            return np.expand_dims(self.inv_logit(self.evaluate_linear(params, X)),2)
+        else:
+            return (np.expand_dims(self.inv_logit(self.evaluate_linear(params, X)),2) > cutoff).astype(int)
 
     def full_log_prob(self, params, X, y):
         prob_hat = self.inv_logit(self.evaluate_linear(params, X))
