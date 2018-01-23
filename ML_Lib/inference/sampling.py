@@ -12,12 +12,21 @@ class MCMCSampler(object):
     def multichain_sampling(self, draw_samples, num_cores = None, num_chains = 1):
         if num_cores is None:
             num_cores = max(multiprocessing.cpu_count(), num_chains)
+        elif num_cores > num_chains:
+            num_cores = num_chains
         
         def worker(worker_id):
-            return draw_samples()
-
+            try:
+                return draw_samples()
+            except Exception as e:
+                raise Exception(e)
+        
         with ProcessingPool(num_cores) as p:
-            res = p.map(worker,[i for i in range(num_chains)])
+            try: 
+                res = p.map(worker,[i for i in range(num_chains)])
+                p.close()
+            except Exception:
+                p.close()
         
         total_accept = 0
         total_accept_samples = 0
