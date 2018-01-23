@@ -26,6 +26,37 @@ class VariationalDistribution(object):
     def jacobian_adjustment(self, params):
         raise NotImplementedException("Must implement in subclass!")
 
+class CauchyMeanField(VariationalDistribution):
+
+    def __init__(self, model, init = None):
+        super().__init__(model)
+        self.is_reparameterizable = True
+        self.n_params = self.model.get_params().shape[1]
+        if init is None:
+            self.v_params = np.concatenate((np.zeros(self.n_params), -5 * np.ones(self.n_params)))
+        else:
+            self.v_params = np.concatenate((init[0,:], np.zeros(self.n_params)))
+
+    def unpack_params(self, params):
+        m,s = params[:self.n_params], params[self.n_params:]
+        return m, s
+
+    def sample(self, params, n_samples):
+        m,s = self.unpack_params(params)
+        unif_samples = agnp.random.uniform(0,1,size = (n_samples,self.n_params))
+        samples = m + agnp.exp(s) * agnp.tan(agnp.pi * (unif_samples - 0.5))
+        return samples
+
+    def entropy(self, params):
+        _, s = self.unpack_params(params)
+        return agnp.log(4 * agnp.pi * agnp.exp(s)**2)
+
+    def get_params(self):
+        return self.v_params
+
+    def set_params(self, params):
+        self.v_params = params
+
 class MeanField(VariationalDistribution):
 
     def __init__(self, model, init = None):
@@ -116,7 +147,7 @@ variance as a result.
 """
 class BlackBoxKLQPScore(VariationalInference):
 
-    def __init__(self, model, variational_distribution = FullRank):
+    def __init__(self, model, variational_distribution = MeanField):
         assert(isinstance(model, ProbabilityModel))
         self.model = model
         self.params = model.get_params()
