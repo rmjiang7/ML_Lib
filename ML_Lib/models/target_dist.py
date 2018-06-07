@@ -30,8 +30,9 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
     from ML_Lib.inference.sampling import HMC, MetropolisHastings
-    from ML_Lib.inference.variational_inference import BlackBoxKLQPScore, BlackBoxKLQPReparam
+    from ML_Lib.inference.variational_inference import BlackBoxKLQPScore, BlackBoxKLQPReparam, FullRank, MeanField, ImplicitVI
     from ML_Lib.inference.optimization import MAP
+    import os
 
     class BananaDistribution(DifferentiableProbabilityModel):
 
@@ -63,25 +64,28 @@ if __name__ == '__main__':
 
     class MixtureDistribution(DifferentiableProbabilityModel):
 
-        def __init__(self, means, std = 5):
+        def __init__(self, means, covs = None):
             self.means = means
             self.dims = self.means.shape[1]
             self.n_mixes = self.means.shape[0]
-            self.std = 5
             self.grad_log_prob = autograd.elementwise_grad(self.log_prob)
             self.params = np.zeros((1,2))
+            if covs is None:
+                self.covs = [np.eye(self.dims)] * self.n_mixes
+            else:
+                self.covs = covs
 
         def sample(self, N = 100):
             s = []
             for i in range(N):
                 z = np.random.choice(list(range(self.n_mixes)))
-                s.append(np.random.multivariate_normal(self.means[z,:], self.std*np.eye(self.dims)))
+                s.append(np.random.multivariate_normal(self.means[z,:], self.covs[z]))
             return np.array(s)
 
         def log_prob(self,z):
             lp = []
             for i in range(self.n_mixes):
-                lp.append(agnp.exp(agsp.stats.multivariate_normal.logpdf(z, self.means[i,:], self.std*np.eye(self.dims))))
+                lp.append(agnp.exp(agsp.stats.multivariate_normal.logpdf(z, self.means[i,:], self.covs[i])))
             return agnp.log(agnp.array(sum(lp)))
 
         def get_params(self):
@@ -148,55 +152,87 @@ if __name__ == '__main__':
         def set_params(self, params):
             self.params = params
 
-    #mx = MixtureDistribution(np.array([[-20,-20],[20,20],[15,15]]))
+    mx = MixtureDistribution(np.array([[-3,-3],[3,3]]),covs = [np.array([[1,0.3],[0.3,1]]), np.array([[1,0.7],[0.7,1]])])
     #mx = BananaDistribution(1,1,np.array([[1,0.7],[0.7,1]]))
     #mx = DonutDistribution()
     #mx = SquiggleDistribution(np.array([0,0]), np.array([[2,0.25],[0.25,0.5]]))
-    mx = MixtureDonutDistribution()
-    """
-    x = np.linspace(-5,5,100)
-    y = np.linspace(-5,5,100)
+    #mx = MixtureDonutDistribution()
+    
+    x = np.linspace(-20,20,100)
+    y = np.linspace(-20,20,100)
     Z = np.zeros((100,100))
     for i in range(100):
         for j in range(100):
             Z[i,j] = mx.log_prob(np.array([x[i],y[j]]))
     
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    X, Y = np.meshgrid(x, y)
-    data = [go.Surface(x = X, y = Y, z = Z)]
-    pyo.plot(data)
-    """
-    hmc = HMC(mx)
-    s = hmc.train(num_samples = 2000, num_cores = 4, num_chains = 2, step_size = 0.05)
-    #s = mx.sample(1000)
-    ma = MAP(mx)
-    mx_max = ma.train()
+    #hmc = HMC(mx)
+    #hmc_samples = hmc.train(num_samples = 8000, num_cores = 4, num_chains = 1, step_size = 0.8, integration_steps = 40)
+    #ma = MAP(mx)
+    #mx_max = ma.train()
     
-    td = TargetDistribution(2, mx_max.log_prob, init = mx_max.get_params())
-    vi = BlackBoxKLQPScore(td)
+    #td = TargetDistribution(2, mx.log_prob, init = mx.get_params())
+    #vi_mean_field = BlackBoxKLQPScore(mx,variational_distribution = MeanField)
+    #vi_full_rank = BlackBoxKLQPScore(mx,variational_distribution = FullRank)
+    vi_implicit = ImplicitVI(mx)
     
     # Set up figure.
     fig = plt.figure(figsize=(12,8), facecolor='white')
     ax = fig.add_subplot(111, frameon=False)
     plt.show(block=False)
+    
+    def get_callback(vi_method):
+        def callback(params, i, grad):
+            if i % 100 == 0:
+                plt.cla()
+                #vi_method.v_dist.set_params(params)
+                vi_method.generator.set_params(params)
+                vi_samples = vi_method.sample(1000)
+                
+                # Show posterior marginals.
+                ax.set_xlim([-20,20])
+                ax.set_ylim([-20,20])
 
-    def callback(params, i, grad):
-        plt.cla()
-        vi.v_dist.set_params(params)
-        vi_samples = vi.sample(1000)
-        
-        # Show posterior marginals.
-        ax.set_xlim([-10,10])
-        ax.set_ylim([-10,10])
+                #ax.plot(s[:,0], s[:,1], 'b.', label = 'target')
+                ax.contourf(x, y, Z)
+                vf = ax.plot(vi_samples[:,0], vi_samples[:,1], 'r.', label = 'variational samples')
+                ax.legend()
+                plt.draw()
+                plt.pause(1.0/90.0)
+        return callback
 
-        ax.plot(s[:,0], s[:,1], 'b.')
-        ax.plot(vi_samples[:,0], vi_samples[:,1], 'g.')
-        ax.plot(mx_max.get_params()[:,0], mx_max.get_params()[:,1],'r.')
+    #vi_mean_field.train(n_mc_samples = 10, step_size = 0.1, num_iters = 1000, callback = get_callback(vi_mean_field))
+    #vi_full_rank.train(n_mc_samples = 10, step_size = 0.1, num_iters = 1000, callback = get_callback(vi_full_rank))
+    vi_implicit.train(n_iters = 100, callback = get_callback(vi_implicit))
+    plt.pause(3.0)
+    
+    """
+    # Final Plt
+    # Set up figure.
+    fig = plt.figure(figsize=(20,8), facecolor='white')
+    ax1 = fig.add_subplot(131)
+    ax2 = fig.add_subplot(132)
+    ax3 = fig.add_subplot(133)
 
-        plt.draw()
-        plt.pause(1.0/90.0)
+    plt.cla()
+    vi_mf_samples = vi_mean_field.sample(1000)
+    vi_fr_samples = vi_full_rank.sample(1000)
 
-    vi.train(n_mc_samples = 10, step_size = 0.00001, num_iters = 1000, callback = callback) 
-    vi_samples = vi.sample(1000)
-    plt.pause(10.0)
+    ax1.set_xlim([-20,20])
+    ax1.set_ylim([-20,20])
+    ax1.contourf(x,y,Z)
+    ax2.set_xlim([-20,20])
+    ax2.set_ylim([-20,20])
+    ax2.contourf(x,y,Z)
+    ax3.set_xlim([-20,20])
+    ax3.set_ylim([-20,20])
+    ax3.contourf(x,y,Z)
+
+    vfmf = ax1.plot(vi_mf_samples[:,0], vi_mf_samples[:,1], 'r.', label = 'meanfield')
+    vffr = ax2.plot(vi_fr_samples[:,0], vi_fr_samples[:,1], 'b.', label = 'fullrank')
+    vfhmc = ax3.plot(hmc_samples[:,0], hmc_samples[:,1], 'g.', label = 'HMC')
+    ax1.legend()
+    ax2.legend()
+    ax3.legend()
+    plt.draw()
+    plt.savefig('/Users/richardjiang/Documents/figs/mixture.png')
+    """

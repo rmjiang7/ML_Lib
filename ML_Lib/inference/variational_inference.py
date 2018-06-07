@@ -4,6 +4,8 @@ from autograd.misc.optimizers import adam
 import autograd.numpy as agnp
 import autograd
 from ML_Lib.models.model import ProbabilityModel, DifferentiableProbabilityModel
+from ML_Lib.models.glm import LogisticRegression
+from ML_Lib.models.neural_network import DenseNeuralNetwork, sigmoid
 
 class VariationalDistribution(object):
 
@@ -233,3 +235,97 @@ class BlackBoxKLQPReparam(VariationalInference):
         ret = adam(grad, self.v_params, step_size = step_size, num_iters = num_iters, callback = callback)
         self.v_params = ret
         return ret
+
+class LikelihoodFreeVI(VariationalInference):
+
+    def __init__(self, data):
+        self.data = data
+        self.n_params = n_params
+
+    def train(self, n_iters = 100, n_mc_samples = 200, callback = None):
+
+        # Train a ratio estimator that takes in a sample and discriminates
+        # between a real sample and a fake one
+        self.ratio_estimator = DenseNeuralNetwork([self.n_params, 10, 10, 1], nonlinearity = sigmoid)
+
+        def discriminator_loss(params, x_p, x_q):
+            logit_p = sigmoid(self.discriminator.predict(params, x_p))
+            logit_q = sigmoid(self.discriminator.predict(params, x_q))
+            loss = agnp.mean(agnp.log(logit_q)) + agnp.mean(agnp.log(1 - logit_p))
+            return loss
+
+class ImplicitVI(VariationalInference):
+
+    def __init__(self, model):
+        super().__init__(model)
+        self.model = model
+        self.n_params = model.get_params().shape[1]
+        # The variational distribution that takes in simple noise and generates parameters
+        self.generator = DenseNeuralNetwork([20,13,13,self.n_params], nonlinearity = sigmoid)
+        # The estimator of the density ratio, which takes in parameters and outputs a scalar
+        self.discriminator = DenseNeuralNetwork([self.n_params,13,13,1], nonlinearity = sigmoid)
+
+    def sample(self, n_samples):
+        z = agnp.random.uniform(-10,10,size = (n_samples, 20))
+        return self.generator.predict(self.generator.get_params(), z)[0,:,:]
+
+    def train(self, n_iters = 100, n_mc_samples = 200, callback = None):
+
+        def discriminator_loss(params, x_p, x_q):
+            logit_p = sigmoid(self.discriminator.predict(params, x_p))
+            logit_q = sigmoid(self.discriminator.predict(params, x_q))
+            loss = agnp.mean(agnp.log(logit_q)) + agnp.mean(agnp.log(1 - logit_p))
+            return loss
+
+        grad_discriminator_loss = autograd.elementwise_grad(discriminator_loss)
+
+        # Train the generator, fixing the discriminator
+        def generator_loss(params, z):
+            og = self.generator.predict(params, z)[0,:,:]
+            ratio = self.discriminator.predict(self.discriminator.get_params(), og)
+            preds = sigmoid(ratio)
+            op_preds = 1 - preds
+            ll = agnp.mean(ratio) - agnp.mean(self.model.log_prob(og))
+            return ll
+
+        grad_generator_loss = autograd.elementwise_grad(generator_loss)
+
+        for i in range(n_iters):
+            print("Iteration %d " % (i + 1))
+            # Fix the generator, train the discriminator
+            # Sample random generator samples
+            z = agnp.random.uniform(-10,10,size = (n_mc_samples, 20))
+
+            # Samples from the prior
+            prior_samples = agnp.random.uniform(-10,10,size = (n_mc_samples, self.n_params))
+            var_dist_samples = self.generator.predict(self.generator.get_params(),z)[0,:,:]
+            
+            # Requires a differentiable Discriminator
+            ret = adam(lambda x,i: -grad_discriminator_loss(x, prior_samples, var_dist_samples), self.discriminator.get_params())
+            self.discriminator.set_params(ret)
+            
+            # Requires a differentiable Generator
+            ret = adam(lambda x,i: grad_generator_loss(x, z), self.generator.get_params(), callback = callback)
+            self.generator.set_params(ret)
+
+        
+if __name__ == '__main__':
+    from ML_Lib.models.glm import LinearRegression
+    from ML_Lib.inference.optimization import MAP
+    import plotly.offline as pyo
+    import plotly.graph_objs as go
+
+    x = np.linspace(-5,5,2)
+    y = 5 * x + 3 + np.random.normal(0,1,size=2)
+    x_with_bias = np.vstack((np.ones(2), x)).T
+
+    model = LinearRegression(2)
+    model.set_data(x_with_bias, y)
+
+    m = ImplicitVI(model)
+    m.train(n_iters = 100)
+    samples = m.sample(100)
+    scatter = go.Scatter(x = samples[:,0], y = samples[:,1], mode = 'markers', name = 'trained')
+    scatter_truth = go.Scatter(x = [3], y = [5], mode = 'markers', name = 'truth')
+    pyo.plot([scatter, scatter_truth])
+

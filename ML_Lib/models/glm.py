@@ -31,9 +31,9 @@ class LinearRegression(GLM):
 
     def full_log_prob(self, params, X, y):
         y_hat = self.evaluate_linear(params, X)
-        log_prior = agnp.sum(norm.logpdf(params, 0, 1), axis = 1)
+        #log_prior = agnp.sum(norm.logpdf(params, 0, 1), axis = 1)
         log_likelihood = agnp.sum(-(y - y_hat)**2)
-        return log_likelihood + log_prior
+        return log_likelihood #+ log_prior
 
     def set_data(self, X, y):
         if len(y.shape) == 2:

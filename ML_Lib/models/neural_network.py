@@ -273,15 +273,13 @@ class BaseNeuralNetwork(Model):
 
 class DenseNeuralNetwork(BaseNeuralNetwork):
 
-    def  __init__(self, layer_dims, nonlinearity = lambda x: linear):
+    def  __init__(self, layer_dims, nonlinearity = linear, last_layer_nonlinearity = linear):
         super().__init__()
-        self.nonlinearity = nonlinearity
-        
         shapes = list(zip(layer_dims[:-1], layer_dims[1:]))
         for m, n in shapes[:len(shapes)-1]:
-            self.add_layer(FCLayer(m, n, self.nonlinearity))
+            self.add_layer(FCLayer(m, n, nonlinearity))
 
-        self.add_layer(FCLayer(shapes[-1][0], shapes[-1][1], nonlinearity = lambda x: x))
+        self.add_layer(FCLayer(shapes[-1][0], shapes[-1][1], nonlinearity = last_layer_nonlinearity))
 
 if __name__ == '__main__':
     from os.path import join, dirname

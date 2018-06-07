@@ -12,6 +12,17 @@ class Model(object):
     def predict(self, params, input):
         raise NotImplementedException("Must be implemented in subclass!")
 
+class LikelihoodFreeProbabilityModel(Model):
+
+    def sample_prior(self):
+        raise NotImplementedException("Must be implemented in subclass!")
+
+    def prior_density(self, paras):
+        raise NotImplementedException("Must be implemented in subclass!")
+
+    def sample(self, params, *args):
+        raise NotImplementedException("Must be implemented in subclass!")
+
 class ProbabilityModel(Model):
 
     def full_log_prob(self, params, *args):

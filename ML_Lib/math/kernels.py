@@ -33,6 +33,14 @@ class Linear(Kernel):
         off = params[:,2]
         return agnp.sum((hvar + var * (x - off) * (y - off)).reshape((n_params, -1)),axis = 1)
 
+    def vec_compute_params(self, params, x, xp):
+        n_params = params.shape[0]
+        var = params[:,0]
+        hvar = params[:,1]
+        off = params[:,2]
+        diffs = agnp.expand_dims(var * (x - off), 1) * agnp.expand_dims((y - off), 0)
+        return hvar + diffs
+
     def get_params(self):
         return self.params
 
@@ -49,11 +57,21 @@ class SquaredExponential(Kernel):
     def compute(self, x, y):
         return self.compute_params(self.params, x, y)
 
+    def vec_compute(self, x, xp):
+        return self.vec_compute_params(self.params, x, xp)
+
     def compute_params(self, params, x, y):
         n_params = params.shape[0]
         ls = params[:,0]
         var = params[:,1]
         return agnp.sum((var * agnp.exp((-(x - y)**2)/(2*(ls**2)))).reshape((n_params, -1)),axis = 1)
+
+    def vec_compute_params(self, params, x, xp):
+        n_params = params.shape[0]
+        ls = params[:,0]
+        var = params[:,1]
+        diffs = agnp.expand_dims(x/ls, 1) - agnp.expand_dims(xp/ls, 0)
+        return var * agnp.exp(-0.5 * agnp.sum(diffs**2, axis = 2))
     
     def get_params(self):
         return self.params
